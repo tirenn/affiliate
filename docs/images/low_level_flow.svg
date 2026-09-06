@@ -1,0 +1,149 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 840" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070b14"/>
+      <stop offset="50%" stop-color="#0c1322"/>
+      <stop offset="100%" stop-color="#070b14"/>
+    </linearGradient>
+    <linearGradient id="step-box" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="840" fill="url(#bg2)"/>
+  <circle cx="200" cy="180" r="160" fill="#3b82f6" opacity="0.04" filter="blur(50px)"/>
+  <circle cx="1000" cy="650" r="200" fill="#10b981" opacity="0.04" filter="blur(60px)"/>
+
+  <!-- Title -->
+  <text x="600" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="800" fill="#f8fafc" text-anchor="middle" letter-spacing="1">LOW-LEVEL EXECUTION FLOW (PLAYWRIGHT &amp; AI ENGINE)</text>
+  <text x="600" y="70" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="400" fill="#94a3b8" text-anchor="middle">Step-by-step browser DOM traversal, threshold evaluation, Lexical typing, and transaction commits</text>
+
+  <!-- Step 1: Session & Authentication -->
+  <g transform="translate(60, 95)" filter="url(#card-shadow)">
+    <rect width="520" height="155" rx="12" fill="url(#step-box)" stroke="#38bdf8" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#0284c7"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#38bdf8">Browser Initialization &amp; Session Handling</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Launch Playwright Chromium in headless mode</text>
+    <text x="25" y="85" font-family="monospace" font-size="11" fill="#94a3b8">• Check `backend/data/sessions/threads_session.json`</text>
+    <text x="40" y="105" font-family="monospace" font-size="11" fill="#38bdf8">├─ Found: Load cookies $\to$ bypass 2FA / login screen</text>
+    <text x="40" y="125" font-family="monospace" font-size="11" fill="#f43f5e">└─ Missing/Expired: Fill credentials $\to$ save fresh storage_state</text>
+  </g>
+
+  <!-- Step 2: Feed Crawl & Metrics Parsing -->
+  <g transform="translate(620, 95)" filter="url(#card-shadow)">
+    <rect width="520" height="155" rx="12" fill="url(#step-box)" stroke="#818cf8" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#4f46e5"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#818cf8">Feed Traversal &amp; Metric Extraction</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Scroll feed window.scrollBy(0, 800) $\to$ query articles</text>
+    <text x="25" y="85" font-family="monospace" font-size="11" fill="#94a3b8">• Parse comments count: regex `(\d+[\.,]?\d*)\s*(rb|k|jt)?`</text>
+    <text x="25" y="105" font-family="monospace" font-size="11" fill="#94a3b8">• Parse like count button: aria-label extraction</text>
+    <text x="25" y="125" font-family="monospace" font-size="11" fill="#818cf8">• Normalize multipliers (10RB $\to$ 10,000, 1.2JT $\to$ 1,200,000)</text>
+  </g>
+
+  <!-- Flow Connector 1->2 -->
+  <path d="M 580 172 L 620 172" stroke="#64748b" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- Step 3: Viral Threshold Evaluation -->
+  <g transform="translate(60, 275)" filter="url(#card-shadow)">
+    <rect width="520" height="155" rx="12" fill="url(#step-box)" stroke="#a855f7" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#7e22ce"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#c084fc">Dual Viral Threshold Decision</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Condition: `comments &gt;= MIN_COMMENTS` OR `likes &gt;= MIN_LIKES`</text>
+    <text x="40" y="85" font-family="monospace" font-size="11" fill="#10b981">├─ True: Qualified viral thread $\to$ extract snippet context</text>
+    <text x="40" y="105" font-family="monospace" font-size="11" fill="#f59e0b">└─ False: Continue scrolling until valid candidate discovered</text>
+    <text x="25" y="125" font-family="monospace" font-size="11" fill="#c084fc">• Target URL stored in execution context</text>
+  </g>
+
+  <!-- Step 4: OpenRouter LLM Copy Generation -->
+  <g transform="translate(620, 275)" filter="url(#card-shadow)">
+    <rect width="520" height="155" rx="12" fill="url(#step-box)" stroke="#ec4899" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#be185d"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#f472b6">Indonesian AI Copywriting Synthesis</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Request to OpenRouter (`openrouter/free` endpoint)</text>
+    <text x="25" y="85" font-family="monospace" font-size="11" fill="#94a3b8">• System Prompt: Casual, friendly Indonesian Threads tone</text>
+    <text x="25" y="105" font-family="monospace" font-size="11" fill="#94a3b8">• Contextual product hook tied to parent post discussion</text>
+    <text x="25" y="125" font-family="monospace" font-size="11" fill="#f472b6">• Extra commission / affiliate link appended naturally</text>
+  </g>
+
+  <!-- Connectors -->
+  <path d="M 880 250 L 880 275" stroke="#64748b" stroke-width="2" stroke-dasharray="4,4"/>
+  <path d="M 620 352 L 580 352" stroke="#64748b" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- Step 5: Lexical Typing & Rotated Button Locator -->
+  <g transform="translate(60, 455)" filter="url(#card-shadow)">
+    <rect width="520" height="165" rx="12" fill="url(#step-box)" stroke="#f43f5e" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#be123c"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#fb7185">Targeted DOM Submission &amp; Keystroke Delay</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Navigate to thread URL $\to$ focus inline composer textarea</text>
+    <text x="25" y="85" font-family="monospace" font-size="11" fill="#fb7185">• Type text using `page.keyboard.type(copy, delay=15ms)`</text>
+    <text x="40" y="105" font-family="monospace" font-size="11" fill="#94a3b8">(Delay triggers Lexical editor synthetic change events)</text>
+    <text x="25" y="125" font-family="monospace" font-size="11" fill="#fb7185">• Query rotated SVG submit button: `div:has(svg[rotate(90deg)])`</text>
+    <text x="25" y="145" font-family="monospace" font-size="11" fill="#94a3b8">• Click submit button directly via Playwright mouse dispatch</text>
+  </g>
+
+  <!-- Step 6: Polling Verification & Base64 Capture -->
+  <g transform="translate(620, 455)" filter="url(#card-shadow)">
+    <rect width="520" height="165" rx="12" fill="url(#step-box)" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#b45309"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#fbbf24">Post-Submission Polling &amp; In-Memory Capture</text>
+    
+    <text x="25" y="65" font-family="monospace" font-size="11" fill="#94a3b8">• Polling loop (up to 8s) verifying textarea clears</text>
+    <text x="40" y="85" font-family="monospace" font-size="11" fill="#10b981">├─ Cleared (`innerText == ""`) $\to$ Submission Confirmed</text>
+    <text x="40" y="105" font-family="monospace" font-size="11" fill="#f43f5e">└─ Text retained $\to$ Flag error (rate limit / network drop)</text>
+    <text x="25" y="125" font-family="monospace" font-size="11" fill="#fbbf24">• Capture in-memory JPEG bytes (`quality=65`)</text>
+    <text x="25" y="145" font-family="monospace" font-size="11" fill="#fbbf24">• Encode directly to `data:image/jpeg;base64,...`</text>
+  </g>
+
+  <!-- Connectors -->
+  <path d="M 320 430 L 320 455" stroke="#64748b" stroke-width="2" stroke-dasharray="4,4"/>
+  <path d="M 580 535 L 620 535" stroke="#64748b" stroke-width="2" stroke-dasharray="4,4"/>
+
+  <!-- Step 7: Database Commit & Auto-Delete -->
+  <g transform="translate(60, 645)" filter="url(#card-shadow)">
+    <rect width="1080" height="150" rx="12" fill="url(#step-box)" stroke="#10b981" stroke-width="1.5"/>
+    <circle cx="32" cy="30" r="14" fill="#047857"/>
+    <text x="32" y="35" font-family="sans-serif" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">7</text>
+    <text x="56" y="34" font-family="sans-serif" font-size="14" font-weight="700" fill="#34d399">Database Transaction &amp; Automatic Queue Reconciliation</text>
+    
+    <g transform="translate(25, 60)">
+      <rect width="320" height="70" rx="8" fill="#064e3b" stroke="#059669" stroke-width="1"/>
+      <text x="15" y="25" font-family="sans-serif" font-size="12" font-weight="700" fill="#a7f3d0">1. INSERT into post_logs</text>
+      <text x="15" y="45" font-family="monospace" font-size="10" fill="#d1fae5">• Snapshot product &amp; copy</text>
+      <text x="15" y="60" font-family="monospace" font-size="10" fill="#d1fae5">• Persist Base64 screenshot URL</text>
+    </g>
+
+    <g transform="translate(380, 60)">
+      <rect width="320" height="70" rx="8" fill="#064e3b" stroke="#059669" stroke-width="1"/>
+      <text x="15" y="25" font-family="sans-serif" font-size="12" font-weight="700" fill="#a7f3d0">2. DELETE from products</text>
+      <text x="15" y="45" font-family="monospace" font-size="10" fill="#d1fae5">• `DELETE WHERE id = product.id`</text>
+      <text x="15" y="60" font-family="monospace" font-size="10" fill="#d1fae5">• Automatic queue shrink</text>
+    </g>
+
+    <g transform="translate(735, 60)">
+      <rect width="320" height="70" rx="8" fill="#064e3b" stroke="#059669" stroke-width="1"/>
+      <text x="15" y="25" font-family="sans-serif" font-size="12" font-weight="700" fill="#a7f3d0">3. UI Broadcast &amp; Cleanup</text>
+      <text x="15" y="45" font-family="monospace" font-size="10" fill="#d1fae5">• Release posting lock</text>
+      <text x="15" y="60" font-family="monospace" font-size="10" fill="#d1fae5">• Next run scheduled cleanly</text>
+    </g>
+  </g>
+
+  <!-- Connectors -->
+  <path d="M 880 620 L 880 645" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4"/>
+
+</svg>
