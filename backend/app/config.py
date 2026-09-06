@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     # Database: Supports SQLite (aiosqlite) or PostgreSQL (asyncpg) - loaded strictly from .env
     DATABASE_URL: str
     
+    # Admin API Key / Passcode - loaded strictly from .env
+    X_ADMIN_KEY: str = ""
+    ADMIN_PASSCODE: str = ""
+
+    # Service Port - loaded strictly from .env
+    PORT: int
+
+    @property
+    def admin_key(self) -> str:
+        return self.X_ADMIN_KEY or self.ADMIN_PASSCODE
+    
     # OpenRouter API base
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     

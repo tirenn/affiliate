@@ -14,7 +14,7 @@ async def test_health_check(client):
 
 @pytest.mark.asyncio
 async def test_shopee_csv_upload_and_deduplication(client):
-    headers = {"x-admin-key": settings.ADMIN_PASSCODE}
+    headers = {"x-admin-key": settings.admin_key}
 
     # Tab-delimited Shopee CSV
     shopee_tsv = (
@@ -51,7 +51,7 @@ async def test_shopee_csv_upload_and_deduplication(client):
 
 @pytest.mark.asyncio
 async def test_bulk_delete_and_delete_all(client):
-    headers = {"x-admin-key": settings.ADMIN_PASSCODE}
+    headers = {"x-admin-key": settings.admin_key}
 
     # Upload test data
     csv_data = (

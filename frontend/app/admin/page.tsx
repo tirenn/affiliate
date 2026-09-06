@@ -1214,7 +1214,7 @@ export default function AdminPage() {
               <div className="relative">
                 <input
                   type={showNewAdminPasscode ? "text" : "password"}
-                  placeholder="Leave blank to keep current passcode (default: admin123)"
+                  placeholder="Leave blank to keep current passcode"
                   value={settingsForm.admin_passcode}
                   onChange={(e) => setSettingsForm({ ...settingsForm, admin_passcode: e.target.value })}
                   className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"

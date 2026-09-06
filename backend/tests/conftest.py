@@ -1,3 +1,8 @@
+import os
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("X_ADMIN_KEY", "test_key")
+os.environ.setdefault("PORT", "8084")
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
