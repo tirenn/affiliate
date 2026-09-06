@@ -1,108 +1,150 @@
-# Autonomous Threads Affiliate Marketing Bot 🚀
+﻿# Autonomous Threads Affiliate Marketing Bot 🚀
 
-An autonomous AI affiliate marketing system that uses an LLM agent with Playwright browser tools to compose viral promotional copy and publish directly to [Meta Threads](https://www.threads.net) on a configurable schedule (cron/interval) or on-demand.
+An autonomous AI affiliate marketing system that uses an LLM agent with Playwright browser tools to discover viral discussions, compose context-aware promotional copy, and publish replies directly to [Meta Threads](https://www.threads.net) on a configurable schedule or on-demand.
+
+[![Architecture Document](https://img.shields.io/badge/Architecture-Overview-blue?style=for-the-badge)](ARCHITECTURE.md)
+
+---
+
+## 🏗️ System Architecture & High-Level Design Flow
+
+Detailed architecture documentation, sequence diagrams, and database schema are available in [**ARCHITECTURE.md**](ARCHITECTURE.md).
+
+![System Architecture Overview](docs/images/architecture_flow.jpg)
 
 ---
 
 ## 🌟 Key Features
 
 1. **Agentic LLM with Playwright Browser Tools**:
-   - The LLM acts as an autonomous browser agent with dynamic tool calling: `browser_navigate`, `browser_click`, `browser_fill`, `browser_press_key`, `browser_wait`, `browser_take_screenshot`, `browser_get_page_summary`, and `finish_post`.
-   - **OpenRouter Free Tier**: Powered exclusively by OpenRouter's free models (default: `openrouter/free`, routing to the best available free model with zero cost). All other proprietary models removed.
-2. **SQLite Storage (Zero-Config Database)**:
-   - Stores all products, settings, execution logs, and step-by-step traces directly in a high-performance SQLite database with WAL mode enabled.
-3. **Automatic Queue Deletion on Post Success**:
-   - **Per requirement:** As soon as a product is successfully published on Threads, its row is automatically removed from the active `products` queue, while the complete post and screenshot audit history is retained in `post_logs`.
-4. **Dual Interface**:
-   - **Page 1: Public History Log (`/`)**: Read-only public feed with product names, affiliate links, generated post text, status badges, and screenshots. **No login required.**
-   - **Page 2: Admin Portal (`/admin`)**: Secured with an admin passcode. Allows uploading product CSVs, managing the queue, configuring Threads credentials / LLM keys, triggering manual "Post Next Item Now" runs, and inspecting granular step-by-step agent traces.
-5. **Anti-Spam Scheduling**:
-   - Configurable posting interval (in minutes/hours) with randomized anti-spam jitter delay to prevent bot rate-limits.
+   - Autonomous browser automation using Playwright Chromium (`mcr.microsoft.com/playwright/python:v1.62.0-noble`).
+   - Session cookie persistence (`threads_session.json`) to prevent repeated logins and bypass 2FA challenges.
+   - Targeted DOM locator targeting the 90-degree rotated SVG arrow reply button with post-submission verification.
+2. **AI Copy Generation (OpenRouter Free Tier)**:
+   - Context-aware Indonesian marketing copy generated using OpenRouter (`openrouter/free`).
+3. **Zero-Storage Base64 Screenshot Storage**:
+   - In-memory JPEG capture (`quality=65`) stored directly as Base64 Data URLs (`data:image/jpeg;base64,...`) in SQLite. Zero disk clutter.
+4. **Automatic Queue Deletion on Post Success**:
+   - As soon as an affiliate comment is verified live on Threads, the product is removed from the active queue while the full history log is preserved in `post_logs`.
+5. **Dual Interface**:
+   - **Public History Log (`/`)**: Read-only public timeline showing posted threads, affiliate links, and Base64 screenshots (Port 7082).
+   - **Admin Portal (`/admin`)**: Secured with `x-admin-key`. Allows CSV product uploading, queue management, live testing, and system settings.
+6. **Strict Zero-Hardcoded Environment Standard**:
+   - Zero hardcoded ports, passwords, or connection strings in code or YAML files.
+   - Secrets managed via Doppler; variables isolated in `.env` files.
 
 ---
 
 ## 📋 CSV Format
 
-Create or upload a `.csv` file with the following headers:
+Create or upload a `.csv` or `.tsv` file with the following headers:
 
 ```csv
 product_name,affiliate_url
 Sony WH-1000XM5 Wireless Noise Canceling Headphones,https://amzn.to/example-sony-xm5
 Logitech MX Master 3S Wireless Performance Mouse,https://amzn.to/example-mx-master-3s
-Apple 2024 MacBook Air 13-inch M3 Chip,https://amzn.to/example-macbook-air-m3
 ```
 
-A sample file is provided at `sample_products.csv`.
+*Note: Shopee affiliate export format (tab-delimited TSV containing `ID Produk`, `Nama Produk`, `Link Komisi Ekstra`) is also supported natively with automatic deduplication.*
 
 ---
 
 ## 🚀 Quickstart Guide
 
-### Option 1: Run Locally (Windows / macOS / Linux)
+### Option 1: Run with Docker Compose (Recommended)
+
+```bash
+# 1. Copy environment template
+copy .env.example .env
+copy backend\.env.example backend\.env
+copy frontend\.env.example frontend\.env
+
+# 2. Build and start containers
+docker compose up --build -d
+```
+
+- **Public Post Log**: [http://localhost:7082](http://localhost:7082)
+- **Admin Console**: [http://localhost:7082/admin](http://localhost:7082/admin)
+- **API Documentation**: [http://localhost:8084/docs](http://localhost:8084/docs)
+
+---
+
+### Option 2: Run Locally for Development
 
 #### 1. Backend Setup
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python -m venv .venv
-# On Windows:
+# Windows:
 .venv\Scripts\activate
-# On macOS/Linux:
+# Linux/macOS:
 source .venv/bin/activate
 
-# Install dependencies and Playwright browser
 pip install -r requirements.txt
 playwright install chromium
 
-# Copy environment variables
 copy .env.example .env
-
-# Run FastAPI server
-uvicorn app.main:app --reload --port 8000
+# Start FastAPI backend
+uvicorn app.main:app --reload --port 8084
 ```
-API Documentation will be live at `http://localhost:8000/docs`.
 
 #### 2. Frontend Setup
 ```bash
 cd frontend
 npm install
+copy .env.example .env
 npm run dev
 ```
-The application will be accessible at:
-- Public Post Feed: `http://localhost:3000`
-- Admin Console: `http://localhost:3000/admin` (Default passcode: `admin123`)
 
 ---
 
-### Option 2: Run with Docker Compose
+## 🔒 Configuration & Environment Isolation
 
-```bash
-docker compose up --build -d
+All infrastructure settings are strictly loaded from `.env` files (or Doppler in production).
+
+### Root `.env`
+```env
+DATABASE_URL=sqlite+aiosqlite:///./data/affiliate.db
+BACKEND_PORT=8084
+FRONTEND_PORT=7082
+NEXT_PUBLIC_API_URL=http://localhost:8084
+X_ADMIN_KEY=your_secret_admin_key
 ```
-This builds and starts both the FastAPI backend and Next.js frontend with persistent SQLite storage mounted at `./backend/data`.
-- **Public Post Log**: [http://localhost:3005](http://localhost:3005)
-- **Admin Console**: [http://localhost:3005/admin](http://localhost:3005/admin) *(Passcode: `admin123`)*
-- **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Dynamic Settings in Web Admin Dashboard
+All bot credentials and runtime behaviors are managed directly in the Web Admin Dashboard (`http://localhost:7082/admin`) and stored securely in SQLite:
+- Threads Username & Password
+- OpenRouter API Key & Model
+- Viral Post Criteria (Min Comments & Likes threshold)
+- Cron Scheduling Interval (minutes) & Window Limiting
+- Headless Browser Mode toggle
 
 ---
 
-## 🔒 Configuration & Environment Variables
+## 🔄 CI/CD & Deployment via GitHub Actions
 
-Copy `.env.example` to `backend/.env` or configure via the Admin UI at `/admin`:
+The repository includes complete GitHub Actions CI/CD workflows:
 
-| Variable | Description | Default |
+| Workflow | Trigger | Description |
 | :--- | :--- | :--- |
-| `ADMIN_PASSCODE` | Secret key required to access `/admin` and protected APIs | `admin123` |
-| `DATABASE_URL` | SQLite database URI | `sqlite+aiosqlite:///./data/affiliate.db` |
-| `OPENROUTER_API_KEY` | OpenRouter API Key (get from openrouter.ai/keys) | - |
-| `OPENROUTER_MODEL` | Model identifier on OpenRouter | `openrouter/free` |
-| `THREADS_USERNAME` | Threads / Instagram account username or email | - |
-| `THREADS_PASSWORD` | Threads / Instagram account password | - |
-| `HEADLESS_BROWSER` | Run Playwright in headless mode | `true` |
-| `SCHEDULER_ENABLED` | Enable automated interval posting | `false` |
-| `SCHEDULER_INTERVAL_MINUTES` | Interval between posts | `60` |
-| `SCHEDULER_JITTER_MINUTES` | Random jitter delay added to each post | `5` |
+| **`ci-backend.yml`** | PR / Push to `main` / `master` (`backend/**`) | Python 3.12 syntax compile checks & Pytest unit tests |
+| **`ci-frontend.yml`** | PR / Push to `main` / `master` (`frontend/**`) | Node.js 20 dependency install & Next.js production build check |
+| **`deploy.yml`** | Push Git Tag `v*-be` or `v*-fe` | Automated SSH deployment to VPS (`/root/Projects/affiliator`) with Doppler secrets sync |
+
+### Tag Deployment Commands
+
+- **Deploy Backend**:
+  ```bash
+  git tag v1.0.0-be
+  git push origin v1.0.0-be
+  ```
+- **Deploy Frontend**:
+  ```bash
+  git tag v1.0.0-fe
+  git push origin v1.0.0-fe
+  ```
+
+> *Tags outside `^v[0-9]+\.[0-9]+\.[0-9]+-(be|fe)$` are strictly rejected by the deployment pipeline.*
 
 ---
 
@@ -110,13 +152,13 @@ Copy `.env.example` to `backend/.env` or configure via the Admin UI at `/admin`:
 
 Run backend unit tests:
 ```bash
-# In project root:
-$env:PYTHONPATH="backend"
-.venv\Scripts\pytest -v backend\tests
+# In backend directory:
+python -m pytest -v tests
 ```
-Tests cover:
+
+Tests verify:
 - Health check & API routes
-- Admin authentication enforcement
-- CSV parser & queue insertion
-- Public access to logs without credentials
-- **Verification of product row deletion from SQLite upon successful post**
+- Header-based authentication (`x-admin-key`)
+- Shopee CSV upload, parser, and deduplication
+- Bulk deletion and queue cleanup
+- **Automatic product deletion from SQLite upon successful posting**
