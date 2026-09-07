@@ -75,6 +75,7 @@ class ThreadsAgentRunner:
         min_likes = int(min_likes_str) if min_likes_str.isdigit() else 100
         headless_str = await get_system_setting(self.db, "headless_browser", "true")
         headless = headless_str.lower() == "true"
+        proxy_url = await get_system_setting(self.db, "proxy_url", "")
 
         # 2. Ambil list thread yang sudah pernah dikomentari
         commented_res = await self.db.execute(select(CommentedThread.thread_url))
@@ -117,7 +118,7 @@ class ThreadsAgentRunner:
 
         try:
             # 5. Initialize Browser & LLM
-            self.browser_manager = PlaywrightToolManager(headless=headless)
+            self.browser_manager = PlaywrightToolManager(headless=headless, proxy_url=proxy_url)
             self.llm_client = LLMClient(api_key=openrouter_key, model=openrouter_model)
 
             # ----------------------------------------------------

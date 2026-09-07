@@ -96,6 +96,8 @@ class SystemSettingsRead(BaseModel):
     min_thread_comments: int
     min_thread_likes: int
     headless_browser: bool
+    proxy_url: Optional[str] = None
+    session_file_exists: bool = False
 
 
 class SystemSettingsUpdate(BaseModel):
@@ -110,6 +112,7 @@ class SystemSettingsUpdate(BaseModel):
     min_thread_comments: Optional[int] = None
     min_thread_likes: Optional[int] = None
     headless_browser: Optional[bool] = None
+    proxy_url: Optional[str] = None
 
 
 class ToggleSchedulerRequest(BaseModel):

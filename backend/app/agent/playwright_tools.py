@@ -13,9 +13,10 @@ logger = logging.getLogger("threads_agent.playwright")
 
 
 class PlaywrightToolManager:
-    def __init__(self, headless: bool = True, imgbb_api_key: Optional[str] = None):
+    def __init__(self, headless: bool = True, imgbb_api_key: Optional[str] = None, proxy_url: Optional[str] = None):
         self.headless = headless
         self.imgbb_api_key = imgbb_api_key
+        self.proxy_url = proxy_url
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -35,33 +36,45 @@ class PlaywrightToolManager:
             "--disable-setuid-sandbox",
             "--disable-infobars",
             "--window-position=0,0",
-            "--ignore-certifcate-errors",
-            "--ignore-certifcate-errors-spki-list",
+            "--ignore-certificate-errors",
+            "--ignore-certificate-errors-spki-list",
             "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         ]
+
+        launch_kwargs = {
+            "headless": self.headless,
+            "args": launch_args
+        }
+        if self.proxy_url and self.proxy_url.strip():
+            launch_kwargs["proxy"] = {"server": self.proxy_url.strip()}
+            logger.info(f"Launching Playwright with proxy: {self.proxy_url.strip()}")
         
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=launch_args
-        )
+        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+
+        context_kwargs = {
+            "viewport": {"width": 1280, "height": 800},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "locale": "id-ID",
+            "timezone_id": "Asia/Jakarta",
+            "geolocation": {"latitude": -6.2088, "longitude": 106.8456},
+            "permissions": ["geolocation"],
+            "extra_http_headers": {
+                "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+            }
+        }
 
         if self.session_file.exists():
             try:
                 self.context = await self.browser.new_context(
                     storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                    **context_kwargs
                 )
-                logger.info("Loaded existing session from storage_state.json")
+                logger.info("Loaded existing session from storage_state.json with Indonesian context")
             except Exception as e:
                 logger.warning(f"Failed to load session file: {e}")
-                self.context = await self.browser.new_context(
-                    viewport={"width": 1280, "height": 800}
-                )
+                self.context = await self.browser.new_context(**context_kwargs)
         else:
-            self.context = await self.browser.new_context(
-                viewport={"width": 1280, "height": 800}
-            )
+            self.context = await self.browser.new_context(**context_kwargs)
 
         self.page = await self.context.new_page()
         self.page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
@@ -249,20 +262,56 @@ class PlaywrightToolManager:
                 "--ignore-certificate-errors-spki-list",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             ]
-            login_browser = await playwright_instance.chromium.launch(
-                headless=self.headless,
-                args=launch_args
-            )
+            launch_kwargs = {
+                "headless": self.headless,
+                "args": launch_args
+            }
+            if self.proxy_url and self.proxy_url.strip():
+                launch_kwargs["proxy"] = {"server": self.proxy_url.strip()}
+                logger.info(f"[FASE 1] Launching login browser with proxy: {self.proxy_url.strip()}")
+
+            login_browser = await playwright_instance.chromium.launch(**launch_kwargs)
             login_context = await login_browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                locale="id-ID",
+                timezone_id="Asia/Jakarta",
+                geolocation={"latitude": -6.2088, "longitude": 106.8456},
+                permissions=["geolocation"],
+                extra_http_headers={
+                    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+                }
             )
             login_page = await login_context.new_page()
             login_page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
             await self._setup_modal_handlers(login_page)
 
             await login_page.goto("https://www.threads.com/login", wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
-            await login_page.wait_for_timeout(3000)
+            await login_page.wait_for_timeout(3500)
+            await self.dismiss_modals_if_present()
+
+            # Check if "Log in with username instead" or alternative prompt is present before inputs appear
+            for _ in range(3):
+                has_user_input = await login_page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').count() > 0
+                if has_user_input:
+                    break
+
+                alt_switch = login_page.locator(
+                    'text="Log in with username instead", '
+                    'text="Masuk dengan nama pengguna", '
+                    'text="Log in with username", '
+                    'div[role="button"]:has-text("username"), '
+                    'button:has-text("username"), '
+                    'a:has-text("username"), '
+                    'span:has-text("username"), '
+                    'span:has-text("Log in with")'
+                )
+                if await alt_switch.count() > 0:
+                    logger.info("Found 'Log in with username instead' prompt. Clicking to reveal login fields...")
+                    await alt_switch.first.click()
+                    await login_page.wait_for_timeout(2000)
+                else:
+                    await login_page.wait_for_timeout(1000)
 
             # 1. Input username
             user_input = login_page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').first

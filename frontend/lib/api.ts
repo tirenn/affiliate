@@ -68,6 +68,8 @@ export interface SystemSettings {
   min_thread_comments: number;
   min_thread_likes: number;
   headless_browser: boolean;
+  proxy_url?: string | null;
+  session_file_exists?: boolean;
 }
 
 export interface CronStatus {
@@ -258,3 +260,28 @@ export function getFullImageUrl(url?: string | null): string {
   if (url.startsWith("http") || url.startsWith("data:")) return url;
   return `${API_BASE}${url}`;
 }
+
+export async function uploadSessionFile(file: File, adminKey: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/api/settings/upload-session`, {
+    method: "POST",
+    headers: { "x-admin-key": adminKey },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to upload session file");
+  }
+  return res.json();
+}
+
+export async function deleteSessionFile(adminKey: string) {
+  const res = await fetch(`${API_BASE}/api/settings/delete-session`, {
+    method: "DELETE",
+    headers: { "x-admin-key": adminKey },
+  });
+  if (!res.ok) throw new Error("Failed to delete session file");
+  return res.json();
+}
+
