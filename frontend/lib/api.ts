@@ -92,9 +92,8 @@ export interface CSVUploadResponse {
 }
 
 export async function fetchPublicLogs(search?: string): Promise<PostLog[]> {
-  const url = new URL(`${API_BASE}/api/logs`);
-  if (search) url.searchParams.set("search", search);
-  const res = await fetch(url.toString(), { cache: "no-store" });
+  const query = search ? `?search=${encodeURIComponent(search)}` : "";
+  const res = await fetch(`${API_BASE}/api/logs${query}`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch public logs");
   return res.json();
 }
@@ -109,9 +108,8 @@ export async function fetchLogDetail(id: number, adminKey: string): Promise<Post
 }
 
 export async function fetchProducts(adminKey: string, isPosted?: boolean): Promise<Product[]> {
-  const url = new URL(`${API_BASE}/api/products`);
-  if (isPosted !== undefined) url.searchParams.set("is_posted", String(isPosted));
-  const res = await fetch(url.toString(), {
+  const query = isPosted !== undefined ? `?is_posted=${encodeURIComponent(String(isPosted))}` : "";
+  const res = await fetch(`${API_BASE}/api/products${query}`, {
     headers: { "x-admin-key": adminKey },
     cache: "no-store",
   });

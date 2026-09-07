@@ -1,4 +1,4 @@
-﻿name: "Production Deploy to VPS (Tag Triggered)"
+name: "Production Deploy to VPS (Tag Triggered)"
 
 on:
   push:
@@ -53,7 +53,7 @@ jobs:
           echo "service_type=$SERVICE_TYPE" >> $GITHUB_OUTPUT
           echo "Valid release tag '$TAG' confirmed for service: $TARGET_SERVICE ($TARGET_CONTAINER)"
 
-      - name: "Verify Required SSH Secrets"
+      - name: "Verify Required Deployment Secrets"
         run: |
           MISSING=""
           if [ -z "${{ secrets.SSH_HOST }}" ]; then MISSING="$MISSING SSH_HOST"; fi
@@ -61,12 +61,23 @@ jobs:
           if [ -z "${{ secrets.SSH_KEY }}" ]; then MISSING="$MISSING SSH_KEY"; fi
           if [ -z "${{ secrets.TARGET_DIR }}" ]; then MISSING="$MISSING TARGET_DIR"; fi
 
+          SERVICE="${{ steps.parse_tag.outputs.service_type }}"
+          if [ "$SERVICE" = "be" ]; then
+            if [ -z "${{ secrets.DOPPLER_TOKEN_BE }}" ] && [ -z "${{ secrets.DOPPLER_TOKEN }}" ]; then
+              MISSING="$MISSING DOPPLER_TOKEN_BE"
+            fi
+          elif [ "$SERVICE" = "fe" ]; then
+            if [ -z "${{ secrets.DOPPLER_TOKEN_FE }}" ] && [ -z "${{ secrets.DOPPLER_TOKEN }}" ]; then
+              MISSING="$MISSING DOPPLER_TOKEN_FE"
+            fi
+          fi
+
           if [ -n "$MISSING" ]; then
             echo "::error::Missing required GitHub Secrets: $MISSING"
             echo "Please configure them in Repository Settings -> Secrets and variables -> Actions."
             exit 1
           fi
-          echo "All core SSH deployment secrets are present."
+          echo "All required deployment secrets for service '$SERVICE' are present."
 
       - name: "Deploy to VPS via SSH"
         uses: appleboy/ssh-action@v1.2.0
@@ -76,6 +87,7 @@ jobs:
           TARGET_CONTAINER: ${{ steps.parse_tag.outputs.target_container }}
           SERVICE_TYPE: ${{ steps.parse_tag.outputs.service_type }}
           DEPLOY_PATH: ${{ secrets.TARGET_DIR }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           DOPPLER_TOKEN_BE: ${{ secrets.DOPPLER_TOKEN_BE }}
           DOPPLER_TOKEN_FE: ${{ secrets.DOPPLER_TOKEN_FE }}
         with:
@@ -83,7 +95,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          envs: TARGET_TAG,TARGET_SERVICE,TARGET_CONTAINER,SERVICE_TYPE,DEPLOY_PATH,DOPPLER_TOKEN_BE,DOPPLER_TOKEN_FE
+          envs: TARGET_TAG,TARGET_SERVICE,TARGET_CONTAINER,SERVICE_TYPE,DEPLOY_PATH,DOPPLER_TOKEN,DOPPLER_TOKEN_BE,DOPPLER_TOKEN_FE
           script_stop: true
           script: |
             set -e
@@ -112,35 +124,31 @@ jobs:
               curl -Ls https://cli.doppler.com/install.sh | sh
             fi
 
-            # 5. Download environment variables per service from Doppler
+            # 5. Download environment variables from Doppler
             echo "Configuring service environment files via Doppler..."
+            mkdir -p backend frontend
+            touch backend/.env frontend/.env
 
-            if [ "$SERVICE_TYPE" = "be" ] || [ -n "$DOPPLER_TOKEN_BE" ]; then
-              if [ -n "$DOPPLER_TOKEN_BE" ]; then
+            TOKEN_BE="${DOPPLER_TOKEN_BE:-$DOPPLER_TOKEN}"
+            TOKEN_FE="${DOPPLER_TOKEN_FE:-$DOPPLER_TOKEN}"
+
+            if [ "$SERVICE_TYPE" = "be" ] || [ -n "$TOKEN_BE" ]; then
+              if [ -n "$TOKEN_BE" ]; then
                 echo "Syncing backend/.env from Doppler..."
-                mkdir -p backend
-                doppler secrets download --token="$DOPPLER_TOKEN_BE" --no-file --format env > backend/.env
+                doppler secrets download --token="$TOKEN_BE" --no-file --format env > backend/.env
                 chmod 600 backend/.env
               fi
             fi
 
-            if [ "$SERVICE_TYPE" = "fe" ] || [ -n "$DOPPLER_TOKEN_FE" ]; then
-              if [ -n "$DOPPLER_TOKEN_FE" ]; then
+            if [ "$SERVICE_TYPE" = "fe" ] || [ -n "$TOKEN_FE" ]; then
+              if [ -n "$TOKEN_FE" ]; then
                 echo "Syncing frontend/.env from Doppler..."
-                mkdir -p frontend
-                doppler secrets download --token="$DOPPLER_TOKEN_FE" --no-file --format env > frontend/.env
+                doppler secrets download --token="$TOKEN_FE" --no-file --format env > frontend/.env
                 chmod 600 frontend/.env
               fi
             fi
 
-            # 6. Extract PORT from service env for Docker host mapping
-            if [ -f backend/.env ]; then
-              BE_P=$(grep -E '^PORT=' backend/.env | cut -d '=' -f2- | tr -d '\r"' || true)
-              if [ -n "$BE_P" ]; then
-                export BACKEND_PORT="$BE_P"
-              fi
-            fi
-
+            # 6. Extract environment variables for Docker build & host port mapping
             if [ -f frontend/.env ]; then
               FE_P=$(grep -E '^PORT=' frontend/.env | cut -d '=' -f2- | tr -d '\r"' || true)
               if [ -n "$FE_P" ]; then
@@ -149,6 +157,10 @@ jobs:
               FE_API=$(grep -E '^NEXT_PUBLIC_API_URL=' frontend/.env | cut -d '=' -f2- | tr -d '\r"' || true)
               if [ -n "$FE_API" ]; then
                 export NEXT_PUBLIC_API_URL="$FE_API"
+              fi
+              FE_INTERNAL=$(grep -E '^INTERNAL_API_URL=' frontend/.env | cut -d '=' -f2- | tr -d '\r"' || true)
+              if [ -n "$FE_INTERNAL" ]; then
+                export INTERNAL_API_URL="$FE_INTERNAL"
               fi
             fi
 
