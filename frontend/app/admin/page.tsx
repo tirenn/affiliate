@@ -548,6 +548,17 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {cronStatus?.auth_error_active && (
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 flex items-center justify-between text-amber-300 text-xs">
+          <div className="flex items-center space-x-2">
+            <span className="text-base">🔒</span>
+            <span>
+              <strong>Threads Session / Login Error Active:</strong> The bot detected a session or login failure. Subsequent duplicate errors are throttled to prevent database log flooding. Please paste your fresh <code>sessionid</code> cookie in the Settings tab. Normal logging will resume immediately once authentication succeeds.
+            </span>
+          </div>
+        </div>
+      )}
+
       {cronStatus?.ai_quota_exceeded && (
         <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 flex items-center justify-between text-amber-300 text-xs">
           <div className="flex items-center space-x-2">

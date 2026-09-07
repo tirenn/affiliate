@@ -133,6 +133,7 @@ class SchedulerStatusRead(BaseModel):
     commented_threads_count: int
     is_currently_posting: bool
     ai_quota_exceeded: bool = False
+    auth_error_active: bool = False
 
 
 class TriggerResponse(BaseModel):

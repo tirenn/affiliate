@@ -20,6 +20,7 @@ class ThreadsCronScheduler:
         self.lock = asyncio.Lock()
         self.is_currently_posting = False
         self.ai_quota_exceeded = False
+        self.auth_error_active = False
         self.job_id = "threads_affiliate_cron"
 
     def start(self):
@@ -124,7 +125,8 @@ class ThreadsCronScheduler:
             "unposted_products_count": unposted_prods,
             "commented_threads_count": commented_threads,
             "is_currently_posting": self.is_currently_posting,
-            "ai_quota_exceeded": self.ai_quota_exceeded
+            "ai_quota_exceeded": self.ai_quota_exceeded,
+            "auth_error_active": self.auth_error_active
         }
 
 
