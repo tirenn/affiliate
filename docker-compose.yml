@@ -8,8 +8,6 @@ services:
     restart: unless-stopped
     env_file:
       - ./backend/.env
-    ports:
-      - "${BACKEND_PORT}:${BACKEND_PORT}"
     volumes:
       - ./backend/data:/app/data
 
@@ -19,6 +17,7 @@ services:
       dockerfile: Dockerfile
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+        - INTERNAL_API_URL=${INTERNAL_API_URL}
     image: affiliate-frontend:latest
     container_name: affiliate-frontend
     restart: unless-stopped

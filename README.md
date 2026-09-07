@@ -1,4 +1,4 @@
-﻿# Autonomous Threads Affiliate Marketing Bot 🚀
+# Autonomous Threads Affiliate Marketing Bot 🚀
 
 An autonomous AI affiliate marketing system that uses an LLM agent with Playwright browser tools to discover viral discussions, compose context-aware promotional copy, and publish replies directly to [Meta Threads](https://www.threads.net) on a configurable schedule or on-demand.
 
@@ -65,7 +65,7 @@ docker compose up --build -d
 
 - **Public Post Log**: [http://localhost:7082](http://localhost:7082)
 - **Admin Console**: [http://localhost:7082/admin](http://localhost:7082/admin)
-- **API Documentation**: [http://localhost:8084/docs](http://localhost:8084/docs)
+- **API Reverse Proxy**: All endpoints available via `http://localhost:7082/api/*` (Backend port is fully private and unexposed to the host)
 
 ---
 
@@ -143,6 +143,19 @@ The repository includes complete GitHub Actions CI/CD workflows:
   git tag v1.0.0-fe
   git push origin v1.0.0-fe
   ```
+
+### Required GitHub Secrets
+
+Configure these 6 secrets in **Repository Settings -> Secrets and variables -> Actions**:
+
+| Secret Name | Description | Example |
+| :--- | :--- | :--- |
+| `DOPPLER_TOKEN` | Doppler Service Token to download production `.env` | `dp.st.prd...` |
+| `SSH_HOST` | VPS IP address or hostname | `123.45.67.89` |
+| `SSH_USER` | SSH login username on VPS | `root` |
+| `SSH_KEY` | SSH private key | `-----BEGIN OPENSSH PRIVATE KEY...` |
+| `SSH_PORT` | SSH port on VPS | `22` |
+| `TARGET_DIR` | Deployment directory path on VPS | `/root/Projects/affiliator` |
 
 > *Tags outside `^v[0-9]+\.[0-9]+\.[0-9]+-(be|fe)$` are strictly rejected by the deployment pipeline.*
 

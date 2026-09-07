@@ -1,4 +1,4 @@
-﻿# System Architecture, High-Level & Low-Level Design Flows 🏗️
+# System Architecture, High-Level & Low-Level Design Flows 🏗️
 
 This document details the architectural design, core subsystems, high-level operational lifecycle, low-level browser automation flow, and data persistence models of the **Autonomous Threads Affiliate Marketing Bot**.
 
@@ -16,26 +16,28 @@ The platform is designed as a decoupled, multi-tier asynchronous architecture wi
 graph TB
     subgraph "External Cloud / Services"
         GH["GitHub Actions CI/CD<br/>(Tagged Releases: v*-be, v*-fe)"]
-        DOPPLER["Doppler Secrets Vault<br/>(DOPPLER_TOKEN_BE / DOPPLER_TOKEN_FE)"]
+        DOPPLER["Doppler Secrets Vault<br/>(DOPPLER_TOKEN)"]
         OPENROUTER["OpenRouter AI Gateway<br/>(openrouter/free)"]
         THREADS["Meta Threads<br/>(threads.net)"]
     end
 
     subgraph "Host / VPS Server (/root/Projects/affiliator)"
-        subgraph "Docker Compose Network"
-            FE["Frontend Service (Next.js 14)<br/>Port: 7082"]
-            BE["Backend Service (FastAPI / Uvicorn)<br/>Port: 8084"]
+        subgraph "Public Interface"
+            FE["Frontend Service (Next.js 14)<br/>Public Port: 7082 (Exposed)"]
+        end
+        subgraph "Internal Docker Network (Private)"
+            BE["Backend Service (FastAPI / Uvicorn)<br/>Internal Port: 8084 (Private / Unexposed)"]
             DB[("SQLite Database<br/>WAL Mode enabled")]
             PLAYWRIGHT["Playwright Automation Engine<br/>(Chromium Headless)"]
         end
     end
 
-    GH -->|Deploy via SSH| BE
     GH -->|Deploy via SSH| FE
+    GH -->|Deploy via SSH| BE
     DOPPLER -->|Sync backend/.env| BE
     DOPPLER -->|Sync frontend/.env| FE
 
-    FE -->|REST API / x-admin-key| BE
+    FE -->|Next.js Reverse Proxy (/api/*)<br/>INTERNAL_API_URL| BE
     BE -->|Async SQLAlchemy| DB
     BE -->|Copy Generation| OPENROUTER
     BE -->|Browser Automation| PLAYWRIGHT
@@ -44,7 +46,9 @@ graph TB
 
 ### Core Architecture Components
 
-1. **Next.js 14 Frontend UI (Port 7082)**:
+1. **Next.js 14 Frontend UI & Reverse Proxy (Public Port 7082)**:
+   - **Single Public Port Model**: Only port `7082` is exposed to the host / public network. The browser communicates solely with `http://<host>:7082`.
+   - **Built-in Reverse Proxy (`rewrites`)**: All API calls (`/api/*`) are proxied server-side by Next.js to the backend microservice via `INTERNAL_API_URL` (`http://backend:8084`). This eliminates CORS entirely and conceals the backend from external access.
    - **Public Audit Feed (`/`)**: Read-only public dashboard showing the timeline of posted affiliate threads, status badges, generated Indonesian promotional copy, direct Threads reply links, and full Base64 screenshot modal previews without authentication.
    - **Admin Portal (`/admin`)**: Protected by `x-admin-key` header authentication. Provides:
      - CSV/TSV product upload with Shopee affiliate link deduplication.
@@ -53,7 +57,8 @@ graph TB
      - Real-time step-by-step agent debug logs.
    - **Client Architecture**: Next.js 14 App Router, React 18, Tailwind CSS, Lucide icons, and zero-storage Base64 Data URL image rendering.
 
-2. **FastAPI Backend Microservice (Port 8084)**:
+2. **FastAPI Backend Microservice (Private Internal Port 8084)**:
+   - **Fully Isolated Network**: Backend does NOT publish any ports to the host (`ports:` omitted in `docker-compose.yml`). Accessible exclusively inside Docker network.
    - **Asynchronous Execution**: Fully async architecture powered by `asyncio`, `aiosqlite`, `httpx`, and `APScheduler`.
    - **Domain Routers**:
      - `/api/products`: Queue operations (upload CSV, list, delete, bulk delete).
@@ -327,10 +332,8 @@ flowchart TD
 
     subgraph "VPS Server (/root/Projects/affiliator)"
         DEPLOY -->|SSH Command| SSH[Checkout Tag & Install Doppler CLI]
-        SSH -->|Token DOPPLER_TOKEN_BE| DOP_BE[Download backend/.env]
-        SSH -->|Token DOPPLER_TOKEN_FE| DOP_FE[Download frontend/.env]
-        DOP_BE --> DOCKER_BUILD[docker compose up -d --build target_service]
-        DOP_FE --> DOCKER_BUILD
+        SSH -->|Token DOPPLER_TOKEN| DOP[Download backend/.env & frontend/.env]
+        DOP --> DOCKER_BUILD[docker compose up -d --build target_service]
         DOCKER_BUILD --> HEALTH[Verify Container Health & Output Logs]
         HEALTH --> PRUNE[Docker Image & Cache Prune]
     end
