@@ -19,6 +19,7 @@ class ThreadsCronScheduler:
         self.scheduler = AsyncIOScheduler()
         self.lock = asyncio.Lock()
         self.is_currently_posting = False
+        self.ai_quota_exceeded = False
         self.job_id = "threads_affiliate_cron"
 
     def start(self):
@@ -69,9 +70,9 @@ class ThreadsCronScheduler:
         logger.info(f"Menerapkan anti-spam jitter delay: {delay_sec}s")
         await asyncio.sleep(delay_sec)
 
-        await self.trigger_next_product()
+        await self.trigger_next_product(is_cron=True)
 
-    async def trigger_next_product(self) -> Optional[int]:
+    async def trigger_next_product(self, is_cron: bool = True) -> Optional[int]:
         """Menjalankan siklus auto-comment Threads"""
         if self.lock.locked() or self.is_currently_posting:
             logger.warning("Posting job lain sedang berjalan. Melewati tick ini.")
@@ -81,7 +82,7 @@ class ThreadsCronScheduler:
             self.is_currently_posting = True
             try:
                 async with AsyncSessionLocal() as db:
-                    runner = ThreadsAgentRunner(db)
+                    runner = ThreadsAgentRunner(db, scheduler=self, is_cron=is_cron)
                     result = await runner.execute()
                     logger.info(f"Eksekusi agen selesai. Status: {result.get('status')}")
                     return result.get("post_log_id")
@@ -122,7 +123,8 @@ class ThreadsCronScheduler:
             "total_products_count": total_prods,
             "unposted_products_count": unposted_prods,
             "commented_threads_count": commented_threads,
-            "is_currently_posting": self.is_currently_posting
+            "is_currently_posting": self.is_currently_posting,
+            "ai_quota_exceeded": self.ai_quota_exceeded
         }
 
 

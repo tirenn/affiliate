@@ -81,6 +81,7 @@ export interface CronStatus {
   unposted_products_count: number;
   commented_threads_count: number;
   is_currently_posting: boolean;
+  ai_quota_exceeded?: boolean;
 }
 
 export interface CSVUploadResponse {

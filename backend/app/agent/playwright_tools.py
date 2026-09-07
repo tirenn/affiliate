@@ -65,6 +65,74 @@ class PlaywrightToolManager:
 
         self.page = await self.context.new_page()
         self.page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
+        await self._setup_modal_handlers(self.page)
+
+    async def _setup_modal_handlers(self, page: Page):
+        """
+        Daftarkan interceptor otomatis (Playwright Locator Handlers).
+        Kapan pun modal/dialog Threads muncul dan menghalangi interaksi,
+        Playwright secara otomatis mendeteksi dan menutup modal tersebut,
+        lalu melanjutkan proses yang sedang berjalan.
+        """
+        try:
+            # 1. Tombol 'Not now' / 'Lain kali' / 'Batal' / 'Cancel'
+            dismiss_buttons = page.locator(
+                'button:has-text("Not now"), '
+                'div[role="button"]:has-text("Not now"), '
+                'button:has-text("Not Now"), '
+                'div[role="button"]:has-text("Not Now"), '
+                'button:has-text("Lain kali"), '
+                'div[role="button"]:has-text("Lain kali"), '
+                'button:has-text("Batal"), '
+                'div[role="button"]:has-text("Batal"), '
+                'button:has-text("Cancel"), '
+                'div[role="button"]:has-text("Cancel"), '
+                'button:has-text("Nanti saja"), '
+                'div[role="button"]:has-text("Nanti saja")'
+            )
+            async def handle_dismiss_btn(loc):
+                try:
+                    logger.info("Auto-dismissing modal via Playwright locator handler (Dismiss button).")
+                    await loc.click(timeout=2000)
+                except Exception as ex:
+                    logger.debug(f"Locator handler dismiss button exception: {ex}")
+
+            await page.add_locator_handler(dismiss_buttons, handle_dismiss_btn)
+
+            # 2. Tombol Close/Silang pada dialog (hindari textbox reply)
+            close_buttons = page.locator(
+                'div[role="dialog"]:not(:has(div[role="textbox"])) div[role="button"]:has(svg[aria-label="Close"]), '
+                'div[role="dialog"]:not(:has(div[role="textbox"])) div[role="button"]:has(svg[aria-label="Tutup"]), '
+                'div[role="dialog"]:not(:has(div[role="textbox"])) button:has(svg[aria-label="Close"]), '
+                'div[role="dialog"]:not(:has(div[role="textbox"])) button:has(svg[aria-label="Tutup"])'
+            )
+            async def handle_close_btn(loc):
+                try:
+                    logger.info("Auto-dismissing modal via Playwright locator handler (Close SVG).")
+                    await loc.click(timeout=2000)
+                except Exception as ex:
+                    logger.debug(f"Locator handler close button exception: {ex}")
+
+            await page.add_locator_handler(close_buttons, handle_close_btn)
+
+            # 3. Cookie / Legal Consent dialog
+            cookie_buttons = page.locator(
+                'div[role="button"]:has-text("Terima Semua"), '
+                'div[role="button"]:has-text("Accept all"), '
+                'button:has-text("Terima Semua"), '
+                'button:has-text("Accept all")'
+            )
+            async def handle_cookie_btn(loc):
+                try:
+                    logger.info("Auto-dismissing cookie consent via Playwright locator handler.")
+                    await loc.click(timeout=2000)
+                except Exception as ex:
+                    logger.debug(f"Locator handler cookie button exception: {ex}")
+
+            await page.add_locator_handler(cookie_buttons, handle_cookie_btn)
+            logger.info("Playwright locator handlers successfully registered for automated modal dismissal.")
+        except Exception as e:
+            logger.warning(f"Could not register modal locator handlers: {e}")
 
     async def save_session(self):
         if self.context:
@@ -79,11 +147,24 @@ class PlaywrightToolManager:
 
     async def close(self):
         if self.context:
-            await self.save_session()
+            try:
+                await self.save_session()
+            except Exception:
+                pass
         if self.browser:
-            await self.browser.close()
+            try:
+                await self.browser.close()
+            except Exception:
+                pass
+            self.browser = None
         if self.playwright:
-            await self.playwright.stop()
+            try:
+                await self.playwright.stop()
+            except Exception:
+                pass
+            self.playwright = None
+        self.context = None
+        self.page = None
 
     async def navigate(self, url: str) -> str:
         if not self.page:
@@ -96,135 +177,288 @@ class PlaywrightToolManager:
         except Exception as e:
             return f"Error navigating to {url}: {str(e)}"
 
-    async def ensure_threads_login(self, username: str, password: str) -> Dict[str, Any]:
-        """
-        1. Cek apakah session ID yang tersimpan masih valid di Threads.
-           Jika masih valid, langsung gunakan tanpa perlu login lagi.
-        2. Jika session ID belum ada atau sudah expired, lakukan login otomatis dengan
-           username dan password, lalu simpan session ID yang baru ke file session.
-        """
+    async def dismiss_modals_if_present(self):
+        """Helper proaktif untuk menutup modal/dialog penghalang seperti 'Save login info', 'Not now', dll."""
         if not self.page:
-            return {"success": False, "error": "Browser page belum terinisialisasi"}
+            return
         try:
-            logger.info("Memeriksa status session ID login Threads...")
-            await self.navigate("https://www.threads.com")
-            await self.page.wait_for_timeout(3500)
+            dismiss_selectors = [
+                'div[role="dialog"] button:has-text("Not Now")',
+                'div[role="dialog"] div[role="button"]:has-text("Not Now")',
+                'div[role="dialog"] button:has-text("Not now")',
+                'div[role="dialog"] div[role="button"]:has-text("Not now")',
+                'div[role="dialog"] button:has-text("Lain kali")',
+                'div[role="dialog"] div[role="button"]:has-text("Lain kali")',
+                'div[role="dialog"] button:has-text("Cancel")',
+                'div[role="dialog"] div[role="button"]:has-text("Cancel")',
+                'div[role="dialog"] button:has-text("Batal")',
+                'div[role="dialog"] div[role="button"]:has-text("Batal")',
+                'div[role="dialog"] button:has-text("Close")',
+                'div[role="dialog"] svg[aria-label="Close"]',
+                'div[role="dialog"] svg[aria-label="Tutup"]',
+                'div[role="button"]:has-text("Terima Semua")',
+                'div[role="button"]:has-text("Accept all")'
+            ]
+            for selector in dismiss_selectors:
+                btn = self.page.locator(selector)
+                if await btn.count() > 0:
+                    await btn.first.click(timeout=1500)
+                    await self.page.wait_for_timeout(500)
+                    logger.info(f"Dismissed modal overlay using selector: {selector}")
 
-            # Cek apakah halaman adalah halaman login atau sudah feed
-            has_password_field = await self.page.locator('input[type="password"], input[autocomplete="current-password"]').count() > 0
-            is_login_page = "login" in self.page.url or has_password_field
+            # Fallback: jika masih ada modal dialog tanpa textbox komentar, tekan Escape
+            generic_dialogs = self.page.locator('div[role="dialog"]:not(:has(div[role="textbox"]))')
+            if await generic_dialogs.count() > 0:
+                await self.page.keyboard.press("Escape")
+                await self.page.wait_for_timeout(300)
+        except Exception:
+            pass
 
-            # Kasus 1: Sesi tersimpan masih valid (Session ID aktif)
-            if not is_login_page and self.session_file.exists():
-                ss = await self.take_screenshot(prefix="login_active_session")
-                logger.info(f"Valid & active session at {self.page.url}. Continuing without re-login.")
-                return {
-                    "success": True,
-                    "message": f"Active & valid Session ID loaded ({self.page.url}). Reusing session without re-login.",
-                    "screenshot": ss
-                }
+    async def perform_fase1_login(self, username: str, password: str) -> Dict[str, Any]:
+        """
+        FASE 1: Khusus Login dengan Username & Password via https://www.threads.com/login.
+        1. Buka browser baru khusus untuk proses login.
+        2. Masuk ke https://www.threads.com/login.
+        3. Isi username & password, lalu submit.
+        4. Tunggu respon autentikasi hingga berhasil login.
+        5. Simpan session ID / storage_state ke threads_session.json.
+        6. TUTUP BROWSER SEPENUHNYA (stop proses browser).
+        """
+        if not username or not password:
+            return {
+                "success": False,
+                "error": "Threads Username or Password has not been configured in Admin Settings."
+            }
 
-            # Case 2: Session expired or no session ID yet
-            if self.session_file.exists():
-                logger.warning("Saved session ID is expired or logged out. Starting automated re-login...")
-            else:
-                logger.info("No saved session ID found. Opening https://www.threads.com/login...")
+        playwright_instance = None
+        login_browser = None
+        login_context = None
+        login_page = None
+        screenshot = ""
 
-            if "login" not in self.page.url:
-                await self.navigate("https://www.threads.com/login")
-                await self.page.wait_for_timeout(3000)
+        try:
+            logger.info("[FASE 1] Membuka browser baru untuk login ke https://www.threads.com/login...")
+            playwright_instance = await async_playwright().start()
+            launch_args = [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-position=0,0",
+                "--ignore-certificate-errors",
+                "--ignore-certificate-errors-spki-list",
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            ]
+            login_browser = await playwright_instance.chromium.launch(
+                headless=self.headless,
+                args=launch_args
+            )
+            login_context = await login_browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            )
+            login_page = await login_context.new_page()
+            login_page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
+            await self._setup_modal_handlers(login_page)
 
-            # Check credentials availability
-            if not username or not password:
-                ss = await self.take_screenshot(prefix="login_missing_credentials")
-                return {
-                    "success": False,
-                    "error": "Session ID expired / not found, and Threads Username or Password is not set in Admin Settings.",
-                    "screenshot": ss
-                }
+            await login_page.goto("https://www.threads.com/login", wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
+            await login_page.wait_for_timeout(3000)
 
-            logger.info(f"Filling Threads login form for '{username}'...")
-            
-            # Input username
-            user_input = self.page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').first
+            # 1. Input username
+            user_input = login_page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').first
             if await user_input.count() > 0:
                 await user_input.click()
                 await user_input.fill(username)
             else:
-                ss = await self.take_screenshot(prefix="login_no_user_input")
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
                     "error": "Username/email input field not found on https://www.threads.com/login.",
-                    "screenshot": ss
+                    "screenshot": screenshot
                 }
 
-            # Input password
-            pass_input = self.page.locator('input[autocomplete="current-password"], input[type="password"], input[name="password"]').first
+            # 2. Input password
+            pass_input = login_page.locator('input[autocomplete="current-password"], input[type="password"], input[name="password"]').first
             if await pass_input.count() > 0:
                 await pass_input.click()
                 await pass_input.fill(password)
             else:
-                ss = await self.take_screenshot(prefix="login_no_pass_input")
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
                     "error": "Password input field not found on https://www.threads.com/login.",
-                    "screenshot": ss
+                    "screenshot": screenshot
                 }
 
-            # Submit login
-            submit_btn = self.page.locator('input[type="submit"], button[type="submit"], div[role="button"]:has-text("Log in"), div[role="button"]:has-text("Masuk")')
+            # 3. Submit login
+            submit_btn = login_page.locator('input[type="submit"], button[type="submit"], div[role="button"]:has-text("Log in"), div[role="button"]:has-text("Masuk")')
             if await submit_btn.count() > 0:
                 await submit_btn.first.click()
             else:
                 await pass_input.press("Enter")
 
-            # Wait for response
-            await self.page.wait_for_timeout(6000)
+            logger.info("[FASE 1] Form login disubmit. Menunggu respon autentikasi...")
+            await login_page.wait_for_timeout(6000)
 
-            # Check for error / incorrect credentials
-            error_el = self.page.locator('div[role="alert"], p[role="alert"], div:has-text("Incorrect password"), div:has-text("Kata sandi salah"), div:has-text("Sorry, your password was incorrect"), div:has-text("Couldn\'t find your account")')
+            # 4. Check for incorrect credentials error
+            error_el = login_page.locator('div[role="alert"], p[role="alert"], div:has-text("Incorrect password"), div:has-text("Kata sandi salah"), div:has-text("Sorry, your password was incorrect"), div:has-text("Couldn\'t find your account")')
             if await error_el.count() > 0:
                 err_text = (await error_el.first.inner_text()).strip()
-                ss = await self.take_screenshot(prefix="login_incorrect_password")
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": f"Threads login rejected: {err_text or 'Incorrect Username or Password.'}",
-                    "screenshot": ss
+                    "error": f"Threads login rejected: {err_text or 'Incorrect username or password.'}",
+                    "screenshot": screenshot
                 }
 
-            # Check for 2FA / checkpoint
-            if "checkpoint" in self.page.url or "challenge" in self.page.url:
-                ss = await self.take_screenshot(prefix="login_checkpoint")
+            # 5. Check for 2FA / checkpoint
+            if "checkpoint" in login_page.url or "challenge" in login_page.url:
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": f"Threads account requires extra security verification (2FA/Challenge): {self.page.url}",
-                    "screenshot": ss
+                    "error": f"Threads account requires additional security checkpoint (2FA/Challenge): {login_page.url}",
+                    "screenshot": screenshot
                 }
 
-            # Stuck on login page
-            if await self.page.locator('input[type="password"]').count() > 0 and "login" in self.page.url:
-                ss = await self.take_screenshot(prefix="login_stuck")
+            # 6. Check if stuck on login
+            has_pw = await login_page.locator('input[type="password"]').count() > 0
+            if has_pw and "login" in login_page.url:
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": f"Login did not advance past the login page ({self.page.url}). Verify username and password.",
-                    "screenshot": ss
+                    "error": f"Login remained on login page ({login_page.url}). Please check credentials.",
+                    "screenshot": screenshot
                 }
 
-            # Save new session ID
-            await self.save_session()
-            ss = await self.take_screenshot(prefix="login_success")
-            logger.info(f"Threads login successful. New session ID saved to {self.session_file}.")
+            # 7. Login successful - wait 2 seconds for storage state / cookies to settle
+            await login_page.wait_for_timeout(2000)
+
+            # 8. Save storage state to file
+            self.session_file.parent.mkdir(parents=True, exist_ok=True)
+            await login_context.storage_state(path=str(self.session_file))
+            logger.info(f"[FASE 1] Session state berhasil disimpan ke {self.session_file}.")
+
+            jpg = await login_page.screenshot(type="jpeg", quality=65)
+            screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
+
             return {
                 "success": True,
-                "message": f"Login successful and Session ID saved for subsequent runs ({self.page.url}).",
-                "screenshot": ss
+                "message": f"Phase 1 Success: Login succeeded and session ID saved to {self.session_file.name}. Browser closed.",
+                "screenshot": screenshot
             }
+
         except Exception as e:
-            logger.error(f"Error during login process: {e}", exc_info=True)
-            ss = await self.take_screenshot(prefix="login_error")
+            logger.error(f"[FASE 1] Exception during login: {e}", exc_info=True)
+            if login_page:
+                try:
+                    jpg = await login_page.screenshot(type="jpeg", quality=65)
+                    screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
+                except Exception:
+                    pass
             return {
                 "success": False,
-                "error": f"Exception on login step: {str(e)}",
+                "error": f"Exception during Phase 1 login: {str(e)}",
+                "screenshot": screenshot
+            }
+        finally:
+            # PENTING: TUTUP BROWSER FASE 1 SEPENUHNYA
+            logger.info("[FASE 1] Menutup dan menghentikan browser login secara total...")
+            if login_browser:
+                try:
+                    await login_browser.close()
+                except Exception:
+                    pass
+            if playwright_instance:
+                try:
+                    await playwright_instance.stop()
+                except Exception:
+                    pass
+
+    async def ensure_threads_login(self, username: str, password: str) -> Dict[str, Any]:
+        """
+        Arsitektur Dua Fase:
+        - FASE 1 (Login via /login):
+          Hanya dijalankan jika session file belum ada atau sudah expired.
+          Browser login dibuka, mengisi username & password, menyimpan session ID,
+          kemudian browser login DITUTUP SEPENUHNYA.
+        - FASE 2 (Eksekusi dengan Session ID Tanpa /login):
+          Membuka browser baru yang langsung memuat file session ID.
+          Langsung membuka https://www.threads.com (TIDAK membuka /login).
+          Karena dibuka dari sesi tersimpan, modal wizard post-login tidak akan muncul
+          sehingga tombol reply terlihat jelas dan bebas halangan.
+        """
+        try:
+            # 1. Cek apakah session file sudah ada
+            need_fase1 = not self.session_file.exists()
+
+            if need_fase1:
+                logger.info("[FASE 1] Session file belum ada. Menjalankan Fase 1 login via /login...")
+                await self.close()
+                f1_res = await self.perform_fase1_login(username, password)
+                if not f1_res.get("success"):
+                    return f1_res
+
+            # 2. FASE 2: Jalankan browser baru dengan Session ID (Tanpa masuk ke /login)
+            logger.info("[FASE 2] Membuka browser baru dengan Session ID tersimpan (tanpa /login)...")
+            if not self.page:
+                await self.start()
+
+            # Buka langsung ke https://www.threads.com (FEED UTAMA, BUKAN /login)
+            await self.navigate("https://www.threads.com")
+            await self.page.wait_for_timeout(3500)
+            await self.dismiss_modals_if_present()
+
+            # Verifikasi status sesi di Fase 2
+            has_password_field = await self.page.locator('input[type="password"], input[autocomplete="current-password"]').count() > 0
+            is_login_page = "login" in self.page.url or has_password_field
+
+            # Jika ternyata sesi yang tersimpan sudah expired (terlempar ke login)
+            if is_login_page:
+                logger.warning("[FASE 2] Sesi tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
+                await self.close()
+                self.session_file.unlink(missing_ok=True)
+
+                # Jalankan ulang Fase 1
+                f1_res = await self.perform_fase1_login(username, password)
+                if not f1_res.get("success"):
+                    return f1_res
+
+                # Jalankan ulang Fase 2
+                logger.info("[FASE 2] Membuka kembali browser dengan session ID baru (tanpa /login)...")
+                await self.start()
+                await self.navigate("https://www.threads.com")
+                await self.page.wait_for_timeout(3500)
+                await self.dismiss_modals_if_present()
+
+                # Cek ulang
+                if "login" in self.page.url or await self.page.locator('input[type="password"]').count() > 0:
+                    ss = await self.take_screenshot(prefix="fase2_failed")
+                    return {
+                        "success": False,
+                        "error": "Phase 2 failed to validate session ID after re-login.",
+                        "screenshot": ss
+                    }
+
+            # Sesi aktif terkonfirmasi di Fase 2
+            ss = await self.take_screenshot(prefix="fase2_active_session")
+            logger.info(f"[FASE 2] Sesi aktif dan valid di {self.page.url}. Siap lanjut tanpa modal post-login.")
+            return {
+                "success": True,
+                "message": f"Phase 2 active using session ID ({self.page.url}) without opening login page.",
+                "screenshot": ss
+            }
+
+        except Exception as e:
+            logger.error(f"Error pada proses autentikasi Threads: {e}", exc_info=True)
+            ss = await self.take_screenshot(prefix="auth_error")
+            return {
+                "success": False,
+                "error": f"Exception during Threads authentication: {str(e)}",
                 "screenshot": ss
             }
 
@@ -249,22 +483,37 @@ class PlaywrightToolManager:
         try:
             await self.navigate("https://www.threads.com")
             await self.page.wait_for_timeout(3500)
+            await self.dismiss_modals_if_present()
 
             js_scanner = """
             () => {
                 function parseCount(str) {
                     if (!str) return 0;
-                    str = str.toLowerCase().replace(/,/g, '.').trim();
+                    str = str.toLowerCase().trim();
                     let multiplier = 1;
-                    if (str.includes('k') || str.includes('rb')) multiplier = 1000;
-                    else if (str.includes('m') || str.includes('jt')) multiplier = 1000000;
-                    const match = str.match(/([0-9]+(?:\\.[0-9]+)?)/);
-                    return match ? Math.round(parseFloat(match[1]) * multiplier) : 0;
+                    if (str.includes('k') || str.includes('rb')) {
+                        multiplier = 1000;
+                        str = str.replace(',', '.');
+                        const m = str.match(/([0-9]+(?:\\.[0-9]+)?)/);
+                        return m ? Math.round(parseFloat(m[1]) * multiplier) : 0;
+                    }
+                    if (str.includes('m') || str.includes('jt')) {
+                        multiplier = 1000000;
+                        str = str.replace(',', '.');
+                        const m = str.match(/([0-9]+(?:\\.[0-9]+)?)/);
+                        return m ? Math.round(parseFloat(m[1]) * multiplier) : 0;
+                    }
+                    const digits = str.replace(/[^0-9]/g, '');
+                    return digits ? parseInt(digits, 10) : 0;
                 }
 
                 const results = [];
                 const origin = window.location.origin || 'https://www.threads.com';
-                const containers = document.querySelectorAll('div[data-pressable-container="true"], article, div[role="article"]');
+                let containers = Array.from(document.querySelectorAll('div[data-pressable-container="true"], article, div[role="article"]'));
+                if (containers.length === 0) {
+                    const postLinks = document.querySelectorAll('a[href*="/post/"], a[href*="/t/"]');
+                    containers = Array.from(postLinks).map(a => a.closest('div[role="article"], article, div[data-pressable-container="true"]') || a.parentElement?.parentElement).filter(Boolean);
+                }
                 
                 containers.forEach(container => {
                     const linkEl = container.querySelector('a[href*="/post/"], a[href*="/t/"]');
@@ -354,21 +603,35 @@ class PlaywrightToolManager:
             }
             """
 
+            all_feed_threads = []
             for scroll_step in range(max_scrolls):
                 batch = await self.page.evaluate(js_scanner)
                 for item in batch:
                     u = item["url"]
-                    if u not in commented_urls and not any(v["url"] == u for v in viral_threads):
-                        # Requirement: Comments >= min_comments OR Likes >= min_likes
+                    if u not in commented_urls:
+                        if not any(v["url"] == u for v in all_feed_threads):
+                            all_feed_threads.append(item)
                         if item["comment_count"] >= min_comments or item["like_count"] >= min_likes:
-                            viral_threads.append(item)
+                            if not any(v["url"] == u for v in viral_threads):
+                                viral_threads.append(item)
 
                 # Scroll down to load more items
-                await self.page.evaluate("window.scrollBy(0, 1000)")
+                await self.page.evaluate("window.scrollBy(0, 1200)")
                 await self.page.wait_for_timeout(2000)
 
-            logger.info(f"Found {len(viral_threads)} viral threads matching criteria (>= {min_comments} comments OR >= {min_likes} likes).")
-            return viral_threads
+            # Sort both lists descending by engagement score (comments weighted higher)
+            viral_threads.sort(key=lambda x: (x.get("comment_count", 0) * 2 + x.get("like_count", 0)), reverse=True)
+            all_feed_threads.sort(key=lambda x: (x.get("comment_count", 0) * 2 + x.get("like_count", 0)), reverse=True)
+
+            if viral_threads:
+                logger.info(f"Found {len(viral_threads)} viral threads matching criteria (>= {min_comments} comments OR >= {min_likes} likes).")
+                return viral_threads
+            elif all_feed_threads:
+                logger.warning(f"No thread met the strict criteria (>={min_comments} comments or >={min_likes} likes). Falling back to top {len(all_feed_threads)} most active threads in feed.")
+                return all_feed_threads
+            else:
+                logger.warning("No posts could be extracted from the Threads feed.")
+                return []
 
         except Exception as e:
             logger.error(f"Error scanning viral threads: {e}")
@@ -384,6 +647,7 @@ class PlaywrightToolManager:
         try:
             await self.navigate(thread_url)
             await self.page.wait_for_timeout(3000)
+            await self.dismiss_modals_if_present()
 
             # 1. Locate reply textbox: div[role="textbox"][contenteditable="true"]
             reply_input = self.page.locator('div[role="textbox"][contenteditable="true"]')
@@ -478,6 +742,7 @@ class PlaywrightToolManager:
             return {
                 "success": True,
                 "screenshot": final_screenshot or before_screenshot,
+                "thread_url": thread_url,
                 "message": "Comment successfully posted and confirmed on Threads"
             }
 

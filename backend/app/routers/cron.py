@@ -22,8 +22,8 @@ async def trigger_post_now(background_tasks: BackgroundTasks):
     if cron_scheduler.is_currently_posting:
         raise HTTPException(status_code=409, detail="Another post job is already currently running")
 
-    # Run in background so API responds immediately
-    background_tasks.add_task(cron_scheduler.trigger_next_product)
+    # Run in background so API responds immediately (manual trigger, not cron)
+    background_tasks.add_task(cron_scheduler.trigger_next_product, is_cron=False)
 
     return TriggerResponse(
         success=True,
@@ -39,7 +39,7 @@ async def toggle_scheduler(
 ):
     target_state = payload.enabled if payload is not None else enabled
     if target_state is None:
-        raise HTTPException(status_code=400, detail="Parameter 'enabled' wajib disertakan.")
+        raise HTTPException(status_code=400, detail="Parameter 'enabled' is required.")
 
     await set_or_update(db, "scheduler_enabled", str(target_state))
     await db.commit()
@@ -48,6 +48,6 @@ async def toggle_scheduler(
     return {
         "success": True,
         "scheduler_enabled": target_state,
-        "message": f"Cron scheduler {'diaktifkan' if target_state else 'dihentikan/dijeda'}.",
+        "message": f"Cron scheduler {'enabled' if target_state else 'paused'}.",
         "cron_status": status_data
     }

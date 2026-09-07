@@ -37,7 +37,7 @@ async def upload_csv(
 
     content_clean = content_text.strip()
     if not content_clean:
-        raise HTTPException(status_code=400, detail="File CSV kosong")
+        raise HTTPException(status_code=400, detail="CSV file is empty")
 
     delim = detect_delimiter(content_clean)
     csv_file = io.StringIO(content_clean)
@@ -45,7 +45,7 @@ async def upload_csv(
     rows = list(reader)
 
     if not rows or len(rows) < 2:
-        raise HTTPException(status_code=400, detail="File CSV harus memiliki minimal 1 baris header dan 1 baris data")
+        raise HTTPException(status_code=400, detail="CSV file must have at least 1 header row and 1 data row")
 
     headers = [h.strip().lower() for h in rows[0]]
     data_rows = rows[1:]
@@ -142,7 +142,7 @@ async def upload_csv(
         added=added,
         skipped_duplicates=skipped_duplicates,
         failed=failed,
-        message=f"Berhasil mengimpor {added} produk. {skipped_duplicates} duplikat diabaikan."
+        message=f"Successfully imported {added} products. {skipped_duplicates} duplicates skipped."
     )
 
 
@@ -173,11 +173,11 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Product not found")
 
     await db.execute(delete(Product).where(Product.id == product_id))
     await db.commit()
-    return {"success": True, "message": f"Produk #{product_id} berhasil dihapus"}
+    return {"success": True, "message": f"Product #{product_id} deleted successfully"}
 
 
 @router.post("/bulk-delete", dependencies=[Depends(verify_admin)])
@@ -191,7 +191,7 @@ async def bulk_delete_products(payload: BulkDeleteRequest, db: AsyncSession = De
     return {
         "success": True,
         "deleted_count": result.rowcount,
-        "message": f"Berhasil menghapus {result.rowcount} produk terpilih"
+        "message": f"Successfully deleted {result.rowcount} selected products"
     }
 
 
@@ -202,7 +202,7 @@ async def delete_all_products(db: AsyncSession = Depends(get_db)):
     return {
         "success": True,
         "deleted_count": result.rowcount,
-        "message": "Semua produk berhasil dihapus dari database"
+        "message": "All products deleted successfully from database"
     }
 
 
@@ -211,10 +211,10 @@ async def retry_product(product_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+        raise HTTPException(status_code=404, detail="Product not found")
 
     product.status = "pending"
     product.is_posted = False
     product.last_error = None
     await db.commit()
-    return {"success": True, "message": f"Produk #{product_id} di-reset ke antrean belum terpost"}
+    return {"success": True, "message": f"Product #{product_id} reset to unposted queue"}

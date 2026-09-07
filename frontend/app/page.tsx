@@ -211,15 +211,15 @@ export default function PublicHistoryPage() {
               {/* Card Footer: Links & Screenshots */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                 <div className="flex items-center space-x-3">
-                  {log.threads_post_url && (
+                  {(log.threads_post_url || log.target_thread_url) && log.status === "success" && (
                     <a
-                      href={log.threads_post_url}
+                      href={log.threads_post_url || log.target_thread_url || ""}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center space-x-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+                      className="inline-flex items-center space-x-1.5 text-xs font-semibold px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-sm hover:shadow-purple-500/25 transition-all"
                     >
-                      <span>View on Threads</span>
-                      <ExternalLink className="w-3 h-3" />
+                      <span>Open Thread in New Tab</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
                     </a>
                   )}
 

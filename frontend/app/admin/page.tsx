@@ -496,6 +496,17 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {cronStatus?.ai_quota_exceeded && (
+        <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 flex items-center justify-between text-amber-300 text-xs">
+          <div className="flex items-center space-x-2">
+            <span className="text-base">⚠️</span>
+            <span>
+              <strong>AI Quota Limit Active:</strong> OpenRouter AI token credits or rate limit exceeded. Subsequent execution errors will be automatically throttled to prevent database flooding, and normal logging will resume as soon as a post succeeds.
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex space-x-2 border-b border-threads-border pb-2">
         <button
@@ -797,13 +808,26 @@ export default function AdminPage() {
                         </span>
                       </div>
                     </button>
-                    <button
-                      onClick={() => handleDeleteLog(log.id)}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-rose-300 hover:bg-rose-950/50 transition-colors"
-                      title="Delete this log"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center space-x-1">
+                      {(log.threads_post_url || log.target_thread_url) && log.status === "success" && (
+                        <a
+                          href={log.threads_post_url || log.target_thread_url || ""}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-lg text-purple-400 hover:text-white hover:bg-purple-600/30 transition-colors"
+                          title="Open Thread in New Tab"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => handleDeleteLog(log.id)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-rose-300 hover:bg-rose-950/50 transition-colors"
+                        title="Delete this log"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
@@ -817,6 +841,17 @@ export default function AdminPage() {
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-bold text-white">{selectedLogDetail.product_name}</h3>
                     <div className="flex items-center space-x-2">
+                      {(selectedLogDetail.threads_post_url || selectedLogDetail.target_thread_url) && selectedLogDetail.status === "success" && (
+                        <a
+                          href={selectedLogDetail.threads_post_url || selectedLogDetail.target_thread_url || ""}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center space-x-1 px-3 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                        >
+                          <span>Open Thread in New Tab</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                       <button
                         onClick={() => handleDeleteLog(selectedLogDetail.id)}
                         className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 text-xs font-semibold border border-rose-800 transition-colors"
