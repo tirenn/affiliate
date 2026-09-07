@@ -86,6 +86,7 @@ export interface CronStatus {
   commented_threads_count: number;
   is_currently_posting: boolean;
   ai_quota_exceeded?: boolean;
+  auth_error_active?: boolean;
 }
 
 export interface CSVUploadResponse {

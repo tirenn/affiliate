@@ -77,6 +77,23 @@ class PlaywrightToolManager:
                     **context_kwargs
                 )
                 logger.info("Loaded existing session from storage_state.json with Indonesian context")
+                try:
+                    loaded_cookies = await self.context.cookies()
+                    new_cookies = []
+                    for c in loaded_cookies:
+                        d = c.get("domain", "")
+                        if d == ".threads.com":
+                            c_net = dict(c)
+                            c_net["domain"] = ".threads.net"
+                            new_cookies.append(c_net)
+                        elif d == ".threads.net":
+                            c_com = dict(c)
+                            c_com["domain"] = ".threads.com"
+                            new_cookies.append(c_com)
+                    if new_cookies:
+                        await self.context.add_cookies(new_cookies)
+                except Exception as ex:
+                    logger.debug(f"Cookie domain sync exception: {ex}")
             except Exception as e:
                 logger.warning(f"Failed to load session file: {e}")
                 self.context = await self.browser.new_context(**context_kwargs)
@@ -272,11 +289,88 @@ class PlaywrightToolManager:
         except Exception:
             pass
 
+    async def check_login_status(self, page: Optional[Page] = None, context: Optional[BrowserContext] = None) -> Dict[str, Any]:
+        """
+        Airtight verification of whether the browser is actually logged in to Threads.
+        Checks both HTTP cookies (presence of sessionid) and DOM UI indicators.
+        """
+        target_page = page or self.page
+        target_context = context or (target_page.context if target_page else self.context)
+
+        if not target_page or not target_context:
+            return {"logged_in": False, "reason": "Browser or page not active"}
+
+        # 1. Cookie Check: Meta ALWAYS sets 'sessionid' cookie when authenticated
+        has_sessionid = False
+        try:
+            cookies = await target_context.cookies()
+            for c in cookies:
+                if c.get("name") == "sessionid" and len(c.get("value", "")) > 5:
+                    has_sessionid = True
+                    break
+        except Exception as e:
+            logger.warning(f"Error checking context cookies: {e}")
+
+        # 2. DOM Check: Guest vs Authenticated Indicators
+        guest_button_count = 0
+        auth_elem_count = 0
+        try:
+            # Guest buttons (e.g. "Log in" in header or beside posts)
+            guest_loc = target_page.locator(
+                'header a[href*="login"], '
+                'header button:has-text("Log in"), '
+                'header button:has-text("Masuk"), '
+                'div[role="button"]:has-text("Log in"), '
+                'div[role="button"]:has-text("Masuk"), '
+                'button:has-text("Log in"), '
+                'button:has-text("Masuk"), '
+                'a:has-text("Log in with Instagram"), '
+                'span:has-text("Log in to like"), '
+                'span:has-text("Masuk untuk menyukai")'
+            )
+            guest_button_count = await guest_loc.count()
+
+            # Authenticated elements (Create thread button, Profile navigation, Activity heart, or inline composer)
+            auth_loc = target_page.locator(
+                'svg[aria-label="Create"], '
+                'svg[aria-label="Buat"], '
+                'svg[aria-label="Activity"], '
+                'svg[aria-label="Aktivitas"], '
+                'svg[aria-label="Profile"], '
+                'svg[aria-label="Profil"], '
+                'div[role="textbox"]'
+            )
+            auth_elem_count = await auth_loc.count()
+        except Exception as e:
+            logger.warning(f"Error checking DOM login elements: {e}")
+
+        logger.info(f"[Login Check] has_sessionid={has_sessionid}, guest_button_count={guest_button_count}, auth_elem_count={auth_elem_count}, url={target_page.url}")
+
+        if not has_sessionid and guest_button_count > 0:
+            return {
+                "logged_in": False,
+                "reason": "Unauthenticated guest mode detected (missing sessionid cookie and 'Log in' button visible on screen)"
+            }
+
+        if not has_sessionid and auth_elem_count == 0:
+            return {
+                "logged_in": False,
+                "reason": "Unauthenticated: Missing sessionid cookie and no authenticated navigation controls found"
+            }
+
+        if guest_button_count > 0 and auth_elem_count == 0:
+            return {
+                "logged_in": False,
+                "reason": "Guest buttons present ('Log in') without authenticated user controls"
+            }
+
+        return {"logged_in": True, "reason": "Active authenticated session verified"}
+
     async def perform_fase1_login(self, username: str, password: str) -> Dict[str, Any]:
         """
-        FASE 1: Khusus Login dengan Username & Password via https://www.threads.com/login.
+        FASE 1: Khusus Login dengan Username & Password via https://www.threads.net/login.
         1. Buka browser baru khusus untuk proses login.
-        2. Masuk ke https://www.threads.com/login.
+        2. Masuk ke https://www.threads.net/login.
         3. Isi username & password, lalu submit.
         4. Tunggu respon autentikasi hingga berhasil login.
         5. Simpan session ID / storage_state ke threads_session.json.
@@ -295,7 +389,7 @@ class PlaywrightToolManager:
         screenshot = ""
 
         try:
-            logger.info("[FASE 1] Membuka browser baru untuk login ke https://www.threads.com/login...")
+            logger.info("[FASE 1] Membuka browser baru untuk login ke https://www.threads.net/login...")
             playwright_instance = await async_playwright().start()
             launch_args = [
                 "--disable-blink-features=AutomationControlled",
@@ -331,7 +425,7 @@ class PlaywrightToolManager:
             login_page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
             await self._setup_modal_handlers(login_page)
 
-            await login_page.goto("https://www.threads.com/login", wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
+            await login_page.goto("https://www.threads.net/login", wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
             await login_page.wait_for_timeout(3500)
             await self.dismiss_modals_if_present()
 
@@ -368,7 +462,7 @@ class PlaywrightToolManager:
                 screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": "Username/email input field not found on https://www.threads.com/login.",
+                    "error": "Username/email input field not found on https://www.threads.net/login.",
                     "screenshot": screenshot
                 }
 
@@ -382,7 +476,7 @@ class PlaywrightToolManager:
                 screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": "Password input field not found on https://www.threads.com/login.",
+                    "error": "Password input field not found on https://www.threads.net/login.",
                     "screenshot": screenshot
                 }
 
@@ -395,6 +489,7 @@ class PlaywrightToolManager:
 
             logger.info("[FASE 1] Form login disubmit. Menunggu respon autentikasi...")
             await login_page.wait_for_timeout(6000)
+            await self.dismiss_modals_if_present()
 
             # 4. Check for incorrect credentials error
             error_el = login_page.locator('div[role="alert"], p[role="alert"], div:has-text("Incorrect password"), div:has-text("Kata sandi salah"), div:has-text("Sorry, your password was incorrect"), div:has-text("Couldn\'t find your account")')
@@ -414,7 +509,7 @@ class PlaywrightToolManager:
                 screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
                 return {
                     "success": False,
-                    "error": f"Threads account requires additional security checkpoint (2FA/Challenge): {login_page.url}",
+                    "error": f"Threads account requires additional security checkpoint (2FA/Challenge): {login_page.url}. Please copy your browser sessionID cookie into Admin Settings.",
                     "screenshot": screenshot
                 }
 
@@ -429,10 +524,37 @@ class PlaywrightToolManager:
                     "screenshot": screenshot
                 }
 
-            # 7. Login successful - wait 2 seconds for storage state / cookies to settle
-            await login_page.wait_for_timeout(2000)
+            # 7. Strict check of logged-in status
+            login_status = await self.check_login_status(page=login_page, context=login_context)
+            if not login_status["logged_in"]:
+                jpg = await login_page.screenshot(type="jpeg", quality=65)
+                screenshot = f"data:image/jpeg;base64,{base64.b64encode(jpg).decode('utf-8')}" if jpg else ""
+                return {
+                    "success": False,
+                    "error": f"Threads login failed: {login_status['reason']}. Meta may have blocked automated login from this datacenter IP. Please copy your browser sessionID cookie into Admin Settings to bypass.",
+                    "screenshot": screenshot
+                }
 
-            # 8. Save storage state to file
+            # 8. Sync cookies across domains (.threads.net and .threads.com)
+            try:
+                cookies = await login_context.cookies()
+                new_cookies = []
+                for c in cookies:
+                    d = c.get("domain", "")
+                    if d == ".threads.net":
+                        c_com = dict(c)
+                        c_com["domain"] = ".threads.com"
+                        new_cookies.append(c_com)
+                    elif d == ".threads.com":
+                        c_net = dict(c)
+                        c_net["domain"] = ".threads.net"
+                        new_cookies.append(c_net)
+                if new_cookies:
+                    await login_context.add_cookies(new_cookies)
+            except Exception as ex:
+                logger.debug(f"Post-login cookie sync error: {ex}")
+
+            # 9. Save storage state to file
             self.session_file.parent.mkdir(parents=True, exist_ok=True)
             await login_context.storage_state(path=str(self.session_file))
             logger.info(f"[FASE 1] Session state berhasil disimpan ke {self.session_file}.")
@@ -460,7 +582,6 @@ class PlaywrightToolManager:
                 "screenshot": screenshot
             }
         finally:
-            # PENTING: TUTUP BROWSER FASE 1 SEPENUHNYA
             logger.info("[FASE 1] Menutup dan menghentikan browser login secara total...")
             if login_browser:
                 try:
@@ -482,7 +603,7 @@ class PlaywrightToolManager:
           kemudian browser login DITUTUP SEPENUHNYA.
         - FASE 2 (Eksekusi dengan Session ID Tanpa /login):
           Membuka browser baru yang langsung memuat file session ID.
-          Langsung membuka https://www.threads.com (TIDAK membuka /login).
+          Langsung membuka https://www.threads.net (TIDAK membuka /login).
           Karena dibuka dari sesi tersimpan, modal wizard post-login tidak akan muncul
           sehingga tombol reply terlihat jelas dan bebas halangan.
         """
@@ -507,24 +628,24 @@ class PlaywrightToolManager:
             await self.page.wait_for_timeout(3500)
             await self.dismiss_modals_if_present()
 
-            # Verifikasi status sesi di Fase 2
-            has_password_field = await self.page.locator('input[type="password"], input[autocomplete="current-password"]').count() > 0
-            has_login_button = await self.page.locator('a[href*="/login"], button:has-text("Log in"), button:has-text("Masuk")').count() > 0
-            is_login_page = "login" in self.page.url or has_password_field
+            # Verifikasi status sesi di Fase 2 dengan check_login_status()
+            status = await self.check_login_status(page=self.page, context=self.context)
 
-            # Jika ternyata sesi tidak valid / expired
-            if is_login_page or (has_login_button and not await self.page.locator('div[role="textbox"], a[href*="/@"]').count()):
+            # Jika ternyata sesi tidak valid / expired / guest mode
+            if not status["logged_in"]:
+                logger.warning(f"[FASE 2] Session check failed: {status['reason']}")
                 if self.session_id and self.session_id.strip():
                     ss = await self.take_screenshot(prefix="invalid_sessionid")
                     return {
                         "success": False,
-                        "error": "The configured Threads sessionID cookie is expired or invalid. Please copy a fresh sessionid from your browser (F12 > Application > Cookies) and update Admin Settings.",
+                        "error": f"The configured Threads sessionID cookie is invalid: {status['reason']}. Please copy a fresh sessionid from your browser (F12 > Application > Cookies) and update Admin Settings.",
                         "screenshot": ss
                     }
 
-                logger.warning("[FASE 2] Sesi file tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
+                logger.warning("[FASE 2] Sesi file tersimpan ternyata tidak valid/expired. Menghapus session file dan mengulang Fase 1...")
                 await self.close()
-                self.session_file.unlink(missing_ok=True)
+                if self.session_file.exists():
+                    self.session_file.unlink(missing_ok=True)
 
                 # Jalankan ulang Fase 1 jika ada username/password
                 f1_res = await self.perform_fase1_login(username, password)
@@ -538,11 +659,12 @@ class PlaywrightToolManager:
                 await self.page.wait_for_timeout(3500)
                 await self.dismiss_modals_if_present()
 
-                if "login" in self.page.url or await self.page.locator('input[type="password"]').count() > 0:
+                status2 = await self.check_login_status(page=self.page, context=self.context)
+                if not status2["logged_in"]:
                     ss = await self.take_screenshot(prefix="fase2_failed")
                     return {
                         "success": False,
-                        "error": "Phase 2 failed to validate session after re-login.",
+                        "error": f"Failed to authenticate: {status2['reason']}. Threads is still showing 'Log in' button. Meta may have blocked credentials login on this VPS IP. Please paste your browser sessionID cookie into Admin Settings to bypass.",
                         "screenshot": ss
                     }
 

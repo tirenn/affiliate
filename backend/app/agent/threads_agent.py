@@ -141,6 +141,33 @@ class ThreadsAgentRunner:
 
             if not login_res.get("success"):
                 err_reason = login_res.get("error", "Threads login failed")
+                already_in_auth_error = bool(self.scheduler and getattr(self.scheduler, "auth_error_active", False))
+
+                # Jika cron dan error login/sesi masih terjadi pada proses berikutnya -> TIDAK PERLU DI-LOG KE DB!
+                if self.is_cron and already_in_auth_error:
+                    logger.warning(
+                        f"[CRON AUTH ERROR THROTTLED] Threads session/login error still active: {err_reason}. "
+                        "Skipping duplicate database log entry per alert throttle policy until session recovers."
+                    )
+                    if self.browser_manager:
+                        await self.browser_manager.close()
+                    if self.post_log:
+                        await self.db.delete(self.post_log)
+                        await self.db.commit()
+                    return {
+                        "status": "throttled_auth_error",
+                        "error": err_reason,
+                        "post_log_id": None
+                    }
+
+                # Jika ini pertama kali gagal saat cron -> catat ke DB dan tandai flag
+                if self.scheduler:
+                    self.scheduler.auth_error_active = True
+                    logger.warning(
+                        f"[CRON AUTH ERROR DETECTED] First occurrence of Threads session/login error logged to DB: {err_reason}. "
+                        "Subsequent repeated auth errors will be throttled until recovery."
+                    )
+
                 await self.record_step(
                     step_number=1,
                     tool_name="login",
@@ -154,6 +181,11 @@ class ThreadsAgentRunner:
                     error=f"Failed at step [login]: {err_reason}",
                     screenshot=step1_screenshot
                 )
+
+            # Jika login berhasil -> reset flag auth_error_active jika sebelumnya aktif
+            if self.scheduler and getattr(self.scheduler, "auth_error_active", False):
+                self.scheduler.auth_error_active = False
+                logger.info("[CRON AUTH RECOVERED] Threads session/login successfully restored! Normal DB logging resumed.")
 
             await self.record_step(
                 step_number=1,
@@ -418,8 +450,12 @@ class ThreadsAgentRunner:
                 screenshot_path=step4_screenshot
             )
 
-            # Reset ai_quota_exceeded flag on successful post
+            # Reset ai_quota_exceeded and auth_error_active flags on successful post
             if self.scheduler:
+                if getattr(self.scheduler, "auth_error_active", False):
+                    logger.info("Threads session/login has recovered! Normal DB logging resumed.")
+                self.scheduler.auth_error_active = False
+
                 if getattr(self.scheduler, "ai_quota_exceeded", False):
                     logger.info("AI Quota limit has recovered! Normal DB logging resumed.")
                 self.scheduler.ai_quota_exceeded = False
