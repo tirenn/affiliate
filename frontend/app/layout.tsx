@@ -5,6 +5,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Threads Affiliate Bot - Post History & Admin",
   description: "Autonomous LLM + Playwright Affiliate Marketing on Meta Threads",
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

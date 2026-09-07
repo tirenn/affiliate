@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="threadsGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9333ea"/>
+      <stop offset="50%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#241434"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </radialGradient>
+  </defs>
+  <!-- Rounded squircle background -->
+  <rect width="32" height="32" rx="8" fill="url(#bgGlow)"/>
+  <rect width="32" height="32" rx="8" fill="none" stroke="url(#threadsGrad)" stroke-width="1.2" stroke-opacity="0.8"/>
+  <!-- Threads @ glyph -->
+  <path d="M16 6.8C10.9 6.8 6.8 10.9 6.8 16s4.1 9.2 9.2 9.2c3.27 0 6.13-1.68 7.78-4.25l-1.32-.76c-1.38 2.14-3.8 3.53-6.46 3.53-4.43 0-8.02-3.59-8.02-8.02s3.59-8.02 8.02-8.02c4.22 0 7.68 3.27 7.99 7.43.02.31.03.63.03.95 0 2.35-1 4.33-2.74 4.33-1.1 0-1.98-.78-1.98-2.2V13.8h-1.37v1.14c-.72-.89-1.77-1.44-2.96-1.44-2.67 0-4.84 2.17-4.84 4.84s2.17 4.84 4.84 4.84c1.26 0 2.38-.48 3.22-1.29.39 1.03 1.35 1.63 2.55 1.63 2.54 0 4.11-2.33 4.11-5.13 0-.38-.02-.76-.05-1.13C24.1 11.23 20.29 6.8 16 6.8zm0 14.96c-1.92 0-3.47-1.55-3.47-3.47s1.55-3.47 3.47-3.47 3.47 1.55 3.47 3.47-1.55 3.47-3.47 3.47z" fill="url(#threadsGrad)"/>
+</svg>
