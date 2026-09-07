@@ -23,12 +23,33 @@ def detect_delimiter(sample_text: str) -> str:
     return ","
 
 
+MAX_CSV_SIZE = 5 * 1024 * 1024  # 5 MB
+DANGEROUS_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def sanitize_cell(val: Optional[str]) -> Optional[str]:
+    """Sanitizes spreadsheet cell text to prevent CSV formula injection attacks."""
+    if not val:
+        return val
+    cleaned = val.strip()
+    if cleaned.startswith(DANGEROUS_FORMULA_PREFIXES):
+        # Escape leading formula trigger character
+        return "'" + cleaned
+    return cleaned
+
+
 @router.post("/upload-csv", response_model=CSVUploadResponse, dependencies=[Depends(verify_admin)])
 async def upload_csv(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
     content_bytes = await file.read()
+    if len(content_bytes) > MAX_CSV_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="CSV file exceeds maximum allowed limit (5MB)."
+        )
+
     # Decode safely with utf-8-sig to strip BOM if present
     try:
         content_text = content_bytes.decode("utf-8-sig")
@@ -96,7 +117,9 @@ async def upload_csv(
             continue
 
         def get_val(idx):
-            return row[idx].strip() if idx != -1 and idx < len(row) else None
+            if idx != -1 and idx < len(row):
+                return sanitize_cell(row[idx])
+            return None
 
         prod_id = get_val(id_idx)
         name = get_val(name_idx)

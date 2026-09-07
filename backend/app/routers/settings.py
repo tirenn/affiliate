@@ -11,23 +11,27 @@ from app.schemas import SystemSettingsRead, SystemSettingsUpdate
 from app.routers.dependencies import verify_admin
 from app.config import settings
 from app.scheduler.cron_runner import cron_scheduler
+from app.security import encrypt_value, decrypt_value, SENSITIVE_KEYS
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 
 async def set_or_update(db: AsyncSession, key: str, value: str):
+    store_val = encrypt_value(value) if key in SENSITIVE_KEYS else value
     result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
     setting = result.scalar_one_or_none()
     if setting:
-        setting.value = value
+        setting.value = store_val
     else:
-        db.add(SystemSetting(key=key, value=value))
+        db.add(SystemSetting(key=key, value=store_val))
 
 
 async def get_val(db: AsyncSession, key: str, fallback: str = "") -> str:
     result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
     setting = result.scalar_one_or_none()
-    return setting.value if setting and setting.value is not None else fallback
+    if not setting or setting.value is None:
+        return fallback
+    return decrypt_value(setting.value) if key in SENSITIVE_KEYS else setting.value
 
 
 @router.get("", response_model=SystemSettingsRead, dependencies=[Depends(verify_admin)])
