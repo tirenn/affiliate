@@ -21,9 +21,33 @@ async def get_system_setting(db: AsyncSession, key: str, default: str = "") -> s
     return setting.value if setting and setting.value is not None else default
 
 
+def is_ai_quota_error(error_msg: Optional[str]) -> bool:
+    """Mendeteksi apakah error disebabkan oleh limit kuota, rate limit, atau token habis pada API AI."""
+    if not error_msg:
+        return False
+    msg = str(error_msg).lower()
+    quota_indicators = [
+        "429",
+        "402",
+        "rate limit",
+        "quota",
+        "credit",
+        "insufficient_quota",
+        "resource_exhausted",
+        "exceeded your current quota",
+        "out of credits",
+        "balance",
+        "tokens limit",
+        "payment required"
+    ]
+    return any(indicator in msg for indicator in quota_indicators)
+
+
 class ThreadsAgentRunner:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, scheduler: Optional[Any] = None, is_cron: bool = False):
         self.db = db
+        self.scheduler = scheduler
+        self.is_cron = is_cron
         self.browser_manager: Optional[PlaywrightToolManager] = None
         self.llm_client: Optional[LLMClient] = None
         self.post_log: Optional[PostLog] = None
@@ -94,15 +118,17 @@ class ThreadsAgentRunner:
         try:
             # 5. Initialize Browser & LLM
             self.browser_manager = PlaywrightToolManager(headless=headless)
-            await self.browser_manager.start()
             self.llm_client = LLMClient(api_key=openrouter_key, model=openrouter_model)
 
             # ----------------------------------------------------
-            # STEP 1: login
+            # STEP 1: Two-Phase Authentication & Session Check
             # ----------------------------------------------------
-            logger.info("[STEP 1/4] Starting login step (https://www.threads.com/login)...")
-            step1_thought = "Opening https://www.threads.com/login to verify session status and authenticate Threads account."
-            step1_args = json.dumps({"login_url": "https://www.threads.com/login", "username": threads_username or "(not set)"})
+            logger.info("[STEP 1/4] Starting Threads authentication (Phase 1: Login & Save Session, Phase 2: Run with Session ID)...")
+            step1_thought = "Executing two-phase authentication: Phase 1 logs in via /login if session is missing or expired; Phase 2 runs directly with saved session ID bypassing login page."
+            step1_args = json.dumps({
+                "mode": "Two-Phase Session Architecture",
+                "username": threads_username or "(not set)"
+            })
 
             login_res = await self.browser_manager.ensure_threads_login(threads_username, threads_password)
             step1_screenshot = login_res.get("screenshot")
@@ -148,23 +174,23 @@ class ThreadsAgentRunner:
                 min_comments=min_comments,
                 min_likes=min_likes,
                 commented_urls=already_commented_urls,
-                max_scrolls=4
+                max_scrolls=5
             )
 
             if not viral_threads:
-                # Tolerant fallback if high threshold is not yet present on initial scroll
+                # Tolerant fallback: grab top active posts from feed
                 fallback_threads = await self.browser_manager.find_viral_threads(
-                    min_comments=5,
-                    min_likes=5,
+                    min_comments=0,
+                    min_likes=0,
                     commented_urls=already_commented_urls,
-                    max_scrolls=2
+                    max_scrolls=3
                 )
                 if fallback_threads:
                     viral_threads = fallback_threads
 
             if not viral_threads:
                 step2_ss = await self.browser_manager.take_screenshot(prefix="no_viral_threads")
-                err_reason = f"No viral threads found with minimum {min_comments} comments OR {min_likes} likes in Threads feed. Please check feed or adjust thresholds in Admin Settings."
+                err_reason = f"No active threads found in feed. Please verify that Threads feed is reachable."
                 await self.record_step(
                     step_number=2,
                     tool_name="find_viral_threads",
@@ -179,8 +205,10 @@ class ThreadsAgentRunner:
                     screenshot=step2_ss
                 )
 
-            target_thread = random.choice(viral_threads)
+            # Pick from top 3 most engaging viral threads
+            target_thread = random.choice(viral_threads[:min(3, len(viral_threads))])
             self.post_log.target_thread_url = target_thread["url"]
+            self.post_log.threads_post_url = target_thread["url"]
             self.post_log.target_thread_snippet = target_thread["text"]
             await self.db.commit()
 
@@ -280,6 +308,34 @@ class ThreadsAgentRunner:
                 )
             except Exception as e:
                 err_reason = f"Failed to generate comment from OpenRouter AI: {str(e)}"
+                is_quota = is_ai_quota_error(str(e))
+                already_in_quota_limit = bool(self.scheduler and getattr(self.scheduler, "ai_quota_exceeded", False))
+
+                # Jika cron dan kuota AI masih limit pada proses berikutnya -> TIDAK PERLU DI-LOG KE DATABASE!
+                if self.is_cron and is_quota and already_in_quota_limit:
+                    logger.warning(
+                        f"[CRON QUOTA THROTTLED] AI quota limit still active: {str(e)}. "
+                        "Skipping database log entry per quota throttle policy until quota recovers."
+                    )
+                    if self.browser_manager:
+                        await self.browser_manager.close()
+                    if self.post_log:
+                        await self.db.delete(self.post_log)
+                        await self.db.commit()
+                    return {
+                        "status": "throttled_quota_limit",
+                        "error": err_reason,
+                        "post_log_id": None
+                    }
+
+                # Jika ini pertama kali kena quota limit saat cron -> catat ke DB dan tandai flag
+                if self.scheduler and is_quota:
+                    self.scheduler.ai_quota_exceeded = True
+                    logger.warning(
+                        f"[CRON QUOTA LIMIT DETECTED] First occurrence of AI quota limit logged to DB: {str(e)}. "
+                        "Subsequent quota errors will be throttled until recovery."
+                    )
+
                 await self.record_step(
                     step_number=3,
                     tool_name="generate_post",
@@ -339,9 +395,14 @@ class ThreadsAgentRunner:
             chosen_product.post_count = (chosen_product.post_count or 0) + 1
             chosen_product.last_posted_at = datetime.now(timezone.utc)
             chosen_product.status = "posted"
+
+            # Set thread link for direct manual verification in new tab
+            posted_thread_url = reply_result.get("thread_url") or target_thread["url"]
+            self.post_log.threads_post_url = posted_thread_url
+            self.post_log.target_thread_url = posted_thread_url
             await self.db.commit()
 
-            step4_output = f"SUCCESS: Reply successfully published to thread {target_thread['url']}!\nScreenshot captured."
+            step4_output = f"SUCCESS: Reply successfully published to thread {posted_thread_url}!\nScreenshot captured."
             await self.record_step(
                 step_number=4,
                 tool_name="post_reply",
@@ -351,6 +412,12 @@ class ThreadsAgentRunner:
                 screenshot_path=step4_screenshot
             )
 
+            # Reset ai_quota_exceeded flag on successful post
+            if self.scheduler:
+                if getattr(self.scheduler, "ai_quota_exceeded", False):
+                    logger.info("AI Quota limit has recovered! Normal DB logging resumed.")
+                self.scheduler.ai_quota_exceeded = False
+
             return await self._finalize_log(
                 status="success",
                 error=None,
@@ -359,6 +426,25 @@ class ThreadsAgentRunner:
 
         except Exception as e:
             logger.error(f"Unexpected error in ThreadsAgentRunner: {e}", exc_info=True)
+            is_quota = is_ai_quota_error(str(e))
+            already_in_quota_limit = bool(self.scheduler and getattr(self.scheduler, "ai_quota_exceeded", False))
+
+            if self.is_cron and is_quota and already_in_quota_limit:
+                logger.warning(f"[CRON QUOTA THROTTLED] Skipping DB log for subsequent quota error: {e}")
+                if self.browser_manager:
+                    await self.browser_manager.close()
+                if self.post_log:
+                    await self.db.delete(self.post_log)
+                    await self.db.commit()
+                return {
+                    "status": "throttled_quota_limit",
+                    "error": str(e),
+                    "post_log_id": None
+                }
+
+            if self.scheduler and is_quota:
+                self.scheduler.ai_quota_exceeded = True
+
             return await self._finalize_log(
                 status="failed",
                 error=f"Unexpected error: {str(e)}",

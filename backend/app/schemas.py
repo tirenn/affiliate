@@ -127,6 +127,7 @@ class SchedulerStatusRead(BaseModel):
     unposted_products_count: int
     commented_threads_count: int
     is_currently_posting: bool
+    ai_quota_exceeded: bool = False
 
 
 class TriggerResponse(BaseModel):
