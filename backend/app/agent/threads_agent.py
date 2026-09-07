@@ -2,7 +2,7 @@ import json
 import random
 import logging
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +11,7 @@ from app.config import settings
 from app.models import Product, PostLog, AgentStepLog, SystemSetting, CommentedThread
 from app.agent.playwright_tools import PlaywrightToolManager
 from app.agent.llm_client import LLMClient
+from app.security import decrypt_value, SENSITIVE_KEYS, sanitize_log_text
 
 logger = logging.getLogger("threads_agent.coordinator")
 
@@ -18,7 +19,9 @@ logger = logging.getLogger("threads_agent.coordinator")
 async def get_system_setting(db: AsyncSession, key: str, default: str = "") -> str:
     result = await db.execute(select(SystemSetting).where(SystemSetting.key == key))
     setting = result.scalar_one_or_none()
-    return setting.value if setting and setting.value is not None else default
+    if not setting or setting.value is None:
+        return default
+    return decrypt_value(setting.value) if key in SENSITIVE_KEYS else setting.value
 
 
 def is_ai_quota_error(error_msg: Optional[str]) -> bool:
@@ -77,6 +80,21 @@ class ThreadsAgentRunner:
         headless = headless_str.lower() == "true"
         proxy_url = await get_system_setting(self.db, "proxy_url", "")
         threads_session_id = await get_system_setting(self.db, "threads_session_id", "")
+
+        # 1b. Safety Cap: Limit maximum posts in rolling 24-hour window (default 50)
+        max_daily_posts_str = await get_system_setting(self.db, "max_daily_posts", "50")
+        max_daily_posts = int(max_daily_posts_str) if max_daily_posts_str.isdigit() else 50
+        since_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+        posts_24h_res = await self.db.execute(
+            select(func.count(PostLog.id)).where(PostLog.status == "success", PostLog.created_at >= since_24h)
+        )
+        posts_last_24h = posts_24h_res.scalar() or 0
+        if posts_last_24h >= max_daily_posts:
+            logger.warning(f"[DAILY SAFETY CAP] Maximum posts reached ({posts_last_24h}/{max_daily_posts} in last 24h). Skipping run to protect account from platform ban.")
+            return {
+                "status": "skipped_daily_cap",
+                "message": f"Daily limit reached ({posts_last_24h}/{max_daily_posts} posts in last 24h)"
+            }
 
         # 2. Ambil list thread yang sudah pernah dikomentari
         commented_res = await self.db.execute(select(CommentedThread.thread_url))
@@ -506,9 +524,9 @@ class ThreadsAgentRunner:
             post_log_id=self.post_log.id,
             step_number=step_number,
             tool_name=tool_name,
-            thought=thought,
-            tool_arguments=tool_arguments,
-            tool_output=tool_output,
+            thought=sanitize_log_text(thought),
+            tool_arguments=sanitize_log_text(tool_arguments),
+            tool_output=sanitize_log_text(tool_output),
             screenshot_path=screenshot_path,
             created_at=datetime.now(timezone.utc)
         )
@@ -529,7 +547,7 @@ class ThreadsAgentRunner:
             await self.browser_manager.close()
 
         self.post_log.status = status
-        self.post_log.error_message = error
+        self.post_log.error_message = sanitize_log_text(error) if error else None
         if screenshot:
             self.post_log.final_screenshot = screenshot
         self.post_log.completed_at = datetime.now(timezone.utc)

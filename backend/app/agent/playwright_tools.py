@@ -2,14 +2,68 @@ import os
 import time
 import uuid
 import base64
+import random
 import logging
-import httpx
+import ipaddress
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+import httpx
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from app.config import settings
 
 logger = logging.getLogger("threads_agent.playwright")
+
+BLOCKED_INTERNAL_HOSTS = {
+    "localhost",
+    "0.0.0.0",
+    "backend",
+    "frontend",
+    "affiliate-backend",
+    "affiliate-frontend",
+    "host.docker.internal",
+}
+
+
+def validate_url_security(url: str) -> Optional[str]:
+    """
+    Validates that a destination URL is safe for Playwright to navigate to.
+    Blocks SSRF attacks to internal Docker networks, loopback addresses, cloud metadata services,
+    and dangerous non-HTTP schemes (e.g. file://, gopher://, data:).
+    Returns None if safe, or a descriptive rejection reason if blocked.
+    """
+    if not url or not isinstance(url, str):
+        return "Empty or invalid URL"
+
+    clean_url = url.strip()
+    try:
+        parsed = urlparse(clean_url)
+    except Exception as e:
+        return f"Malformed URL: {e}"
+
+    if parsed.scheme.lower() not in ("http", "https"):
+        return f"Blocked scheme '{parsed.scheme}': only http and https are permitted"
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return "Missing hostname in URL"
+
+    if hostname in BLOCKED_INTERNAL_HOSTS:
+        return f"Blocked access to internal container host: '{hostname}'"
+
+    # Check for direct IP address literals
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_loopback:
+            return f"Blocked loopback IP: {hostname}"
+        if ip.is_private:
+            return f"Blocked private network address: {hostname}"
+        if ip.is_link_local or str(ip) == "169.254.169.254":
+            return f"Blocked cloud metadata / link-local IP: {hostname}"
+    except ValueError:
+        pass  # Standard domain name, not an IP literal
+
+    return None
 
 
 class PlaywrightToolManager:
@@ -244,9 +298,16 @@ class PlaywrightToolManager:
     async def navigate(self, url: str) -> str:
         if not self.page:
             return "Error: Browser not started"
+
+        sec_err = validate_url_security(url)
+        if sec_err:
+            logger.warning(f"[ANTI-SSRF BLOCKED] {sec_err} - URL: {url}")
+            return f"Security Error: Navigation blocked: {sec_err}"
+
         try:
             response = await self.page.goto(url, wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
-            await self.page.wait_for_timeout(2500)
+            # Randomized jitter between 1.8s - 3.2s
+            await self.page.wait_for_timeout(random.randint(1800, 3200))
             status = response.status if response else "unknown"
             return f"Navigated to {url}. Current URL: {self.page.url}. HTTP Status: {status}"
         except Exception as e:
@@ -840,9 +901,10 @@ class PlaywrightToolManager:
                             if not any(v["url"] == u for v in viral_threads):
                                 viral_threads.append(item)
 
-                # Scroll down to load more items
-                await self.page.evaluate("window.scrollBy(0, 1200)")
-                await self.page.wait_for_timeout(2000)
+                # Scroll down with randomized human jitter
+                scroll_delta = random.randint(900, 1400)
+                await self.page.evaluate(f"window.scrollBy(0, {scroll_delta})")
+                await self.page.wait_for_timeout(random.randint(1800, 2900))
 
             # Sort both lists descending by engagement score (comments weighted higher)
             viral_threads.sort(key=lambda x: (x.get("comment_count", 0) * 2 + x.get("like_count", 0)), reverse=True)
@@ -891,12 +953,13 @@ class PlaywrightToolManager:
 
             await self.page.wait_for_timeout(1000)
 
-            # 2. Type comment text using keyboard to trigger Lexical synthetic input events
+            # 2. Type comment text using simulated human keystrokes with randomized delay
             active_box = self.page.locator('div[role="textbox"][contenteditable="true"]').first
             await active_box.click()
-            await self.page.wait_for_timeout(500)
-            await self.page.keyboard.type(comment_text, delay=15)
-            await self.page.wait_for_timeout(1500)
+            await self.page.wait_for_timeout(random.randint(400, 800))
+            typing_delay = random.randint(35, 75)
+            await self.page.keyboard.type(comment_text, delay=typing_delay)
+            await self.page.wait_for_timeout(random.randint(1200, 2000))
 
             before_screenshot = await self.take_screenshot(prefix="before_reply")
 

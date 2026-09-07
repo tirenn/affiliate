@@ -19,6 +19,12 @@ logger = logging.getLogger("threads_agent.main")
 async def lifespan(app: FastAPI):
     logger.info("Initializing SQLite database tables...")
     await init_db()
+
+    logger.info("Verifying sensitive credentials encryption at rest...")
+    from app.database import AsyncSessionLocal
+    from app.security import migrate_unencrypted_settings
+    async with AsyncSessionLocal() as db:
+        await migrate_unencrypted_settings(db)
     
     logger.info("Starting background cron scheduler...")
     cron_scheduler.start()

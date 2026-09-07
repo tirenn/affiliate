@@ -1,4 +1,4 @@
-﻿# Environment Variables & Secrets
+# Environment Variables & Secrets
 .env
 .env.*
 *.env
@@ -68,6 +68,9 @@ backend/data/screenshots/
 *.db
 *.sqlite
 *.sqlite3
+backend/data/
+.master_key
+*.master_key
 
 # Playwright
 test-results/
