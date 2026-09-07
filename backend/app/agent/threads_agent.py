@@ -75,6 +75,8 @@ class ThreadsAgentRunner:
         min_likes = int(min_likes_str) if min_likes_str.isdigit() else 100
         headless_str = await get_system_setting(self.db, "headless_browser", "true")
         headless = headless_str.lower() == "true"
+        proxy_url = await get_system_setting(self.db, "proxy_url", "")
+        threads_session_id = await get_system_setting(self.db, "threads_session_id", "")
 
         # 2. Ambil list thread yang sudah pernah dikomentari
         commented_res = await self.db.execute(select(CommentedThread.thread_url))
@@ -117,16 +119,20 @@ class ThreadsAgentRunner:
 
         try:
             # 5. Initialize Browser & LLM
-            self.browser_manager = PlaywrightToolManager(headless=headless)
+            self.browser_manager = PlaywrightToolManager(
+                headless=headless,
+                proxy_url=proxy_url,
+                session_id=threads_session_id
+            )
             self.llm_client = LLMClient(api_key=openrouter_key, model=openrouter_model)
 
             # ----------------------------------------------------
             # STEP 1: Two-Phase Authentication & Session Check
             # ----------------------------------------------------
             logger.info("[STEP 1/4] Starting Threads authentication (Phase 1: Login & Save Session, Phase 2: Run with Session ID)...")
-            step1_thought = "Executing two-phase authentication: Phase 1 logs in via /login if session is missing or expired; Phase 2 runs directly with saved session ID bypassing login page."
+            step1_thought = "Executing session authentication: using browser sessionID cookie or saved session state without visiting /login."
             step1_args = json.dumps({
-                "mode": "Two-Phase Session Architecture",
+                "mode": "SessionID Cookie" if threads_session_id else "Session File / Credentials",
                 "username": threads_username or "(not set)"
             })
 

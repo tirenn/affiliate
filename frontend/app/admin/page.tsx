@@ -17,6 +17,8 @@ import {
   fetchLogDetail,
   deleteLog,
   deleteAllLogs,
+  uploadSessionFile,
+  deleteSessionFile,
   Product,
   SystemSettings,
   CronStatus,
@@ -43,11 +45,14 @@ import {
   ShieldCheck,
   Flame,
   ExternalLink,
+  Download,
   Layers,
   Sparkles,
   CheckSquare,
   Square,
   AlertTriangle,
+  Globe,
+  FileText,
 } from "lucide-react";
 
 export default function AdminPage() {
@@ -58,6 +63,7 @@ export default function AdminPage() {
   const [showAdminPasscode, setShowAdminPasscode] = useState(false);
   const [showNewAdminPasscode, setShowNewAdminPasscode] = useState(false);
   const [showThreadsPassword, setShowThreadsPassword] = useState(false);
+  const [showThreadsSessionId, setShowThreadsSessionId] = useState(false);
 
   // Data states
   const [products, setProducts] = useState<Product[]>([]);
@@ -85,6 +91,7 @@ export default function AdminPage() {
     openrouter_model: string;
     threads_username: string;
     threads_password: string;
+    threads_session_id: string;
     admin_passcode: string;
     scheduler_enabled: boolean;
     scheduler_window_minutes: number | string;
@@ -92,11 +99,13 @@ export default function AdminPage() {
     min_thread_comments: number | string;
     min_thread_likes: number | string;
     headless_browser: boolean;
+    proxy_url: string;
   }>({
     openrouter_api_key: "",
     openrouter_model: "openrouter/free",
     threads_username: "",
     threads_password: "",
+    threads_session_id: "",
     admin_passcode: "",
     scheduler_enabled: false,
     scheduler_window_minutes: 60,
@@ -104,7 +113,13 @@ export default function AdminPage() {
     min_thread_comments: 100,
     min_thread_likes: 100,
     headless_browser: true,
+    proxy_url: "",
   });
+
+  const [sessionFile, setSessionFile] = useState<File | null>(null);
+  const [sessionUploading, setSessionUploading] = useState(false);
+  const [sessionMessage, setSessionMessage] = useState("");
+  const [sessionDeleting, setSessionDeleting] = useState(false);
 
   useEffect(() => {
     const savedKey = sessionStorage.getItem("admin_key");
@@ -158,6 +173,7 @@ export default function AdminPage() {
         min_thread_comments: s.min_thread_comments,
         min_thread_likes: s.min_thread_likes ?? 100,
         headless_browser: s.headless_browser,
+        proxy_url: s.proxy_url || "",
       }));
     } catch (e) {
       console.error(e);
@@ -268,6 +284,37 @@ export default function AdminPage() {
     }
   };
 
+  const handleSessionUpload = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!sessionFile) return;
+    setSessionUploading(true);
+    setSessionMessage("");
+    try {
+      const res = await uploadSessionFile(sessionFile, adminKey);
+      setSessionMessage(res.message || "Session file uploaded successfully!");
+      setSessionFile(null);
+      await reloadData();
+    } catch (err: any) {
+      setSessionMessage(`Upload failed: ${err.message}`);
+    } finally {
+      setSessionUploading(false);
+    }
+  };
+
+  const handleDeleteSession = async () => {
+    if (!confirm("Are you sure you want to delete the active Threads session? The bot will attempt a fresh login.")) return;
+    setSessionDeleting(true);
+    try {
+      await deleteSessionFile(adminKey);
+      alert("Session file deleted successfully.");
+      await reloadData();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete session file");
+    } finally {
+      setSessionDeleting(false);
+    }
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -277,8 +324,13 @@ export default function AdminPage() {
         scheduler_posts_per_window: Number(settingsForm.scheduler_posts_per_window) || 10,
         min_thread_comments: Number(settingsForm.min_thread_comments) || 100,
         min_thread_likes: Number(settingsForm.min_thread_likes) || 100,
+        proxy_url: settingsForm.proxy_url.trim(),
+        threads_session_id: settingsForm.threads_session_id.trim(),
       };
       await updateSettings(payload, adminKey);
+      if (settingsForm.threads_session_id.trim()) {
+        setSettingsForm((prev) => ({ ...prev, threads_session_id: "" }));
+      }
       if (settingsForm.admin_passcode.trim()) {
         const newKey = settingsForm.admin_passcode.trim();
         sessionStorage.setItem("admin_key", newKey);
@@ -1194,53 +1246,181 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Threads Login */}
+          {/* Section 4: Threads Authentication via sessionID */}
           <div className="space-y-4 border-b border-threads-border pb-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-threads-muted">
-              4. Meta Threads / Instagram Credentials
-            </h3>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">Username / Email</label>
-              <input
-                type="text"
-                placeholder="username_threads"
-                value={settingsForm.threads_username}
-                onChange={(e) => setSettingsForm({ ...settingsForm, threads_username: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
-              />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-threads-muted flex items-center gap-2">
+                <FileText className="w-4 h-4 text-purple-400" />
+                4. Meta Threads Authentication (sessionID)
+              </h3>
+              <div>
+                {settings?.threads_session_id_set ? (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <CheckCircle className="w-3.5 h-3.5 mr-1" /> sessionID Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1" /> No sessionID Configured
+                  </span>
+                )}
+              </div>
             </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1.5">
-                Password {settings?.threads_password_set && <span className="text-emerald-400">(Saved)</span>}
-              </label>
+
+            {/* Primary: sessionID Cookie Input */}
+            <div className="bg-purple-950/20 border border-purple-800/30 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-medium text-purple-200">
+                  Threads <code>sessionid</code> Cookie Value{" "}
+                  {settings?.threads_session_id_set && (
+                    <span className="text-emerald-400 font-semibold">(Saved in Database)</span>
+                  )}
+                </label>
+              </div>
+
               <div className="relative">
                 <input
-                  type={showThreadsPassword ? "text" : "password"}
-                  placeholder="Leave blank to keep existing password"
-                  value={settingsForm.threads_password}
-                  onChange={(e) => setSettingsForm({ ...settingsForm, threads_password: e.target.value })}
-                  className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
+                  type={showThreadsSessionId ? "text" : "password"}
+                  placeholder={
+                    settings?.threads_session_id_set
+                      ? "Leave blank to keep current sessionID, or paste new sessionID to replace"
+                      : "Paste your sessionid cookie here (e.g. 768291...%3A...)"
+                  }
+                  value={settingsForm.threads_session_id}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, threads_session_id: e.target.value })}
+                  className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-purple-700/50 text-white text-sm focus:outline-none focus:border-purple-400 font-mono text-xs"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowThreadsPassword(!showThreadsPassword)}
+                  onClick={() => setShowThreadsSessionId(!showThreadsSessionId)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-threads-muted hover:text-white transition-colors focus:outline-none p-1"
-                  title={showThreadsPassword ? "Hide password" : "Show password"}
+                  title={showThreadsSessionId ? "Hide sessionID" : "Show sessionID"}
                 >
-                  {showThreadsPassword ? (
+                  {showThreadsSessionId ? (
                     <EyeOff className="w-4 h-4 text-purple-400" />
                   ) : (
                     <Eye className="w-4 h-4" />
                   )}
                 </button>
               </div>
+
+              <div className="bg-threads-dark/70 rounded-lg p-3 text-[11px] text-gray-300 leading-relaxed border border-threads-border space-y-1.5">
+                <p className="font-semibold text-purple-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" /> How to copy your <code>sessionid</code> in 10 seconds:
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-gray-400 pl-1">
+                  <li>Open <a href="https://www.threads.net" target="_blank" rel="noopener noreferrer" className="text-purple-400 underline">threads.net</a> in Chrome/Edge on your PC where you are already logged in.</li>
+                  <li>Press <kbd className="px-1.5 py-0.5 bg-gray-800 rounded border border-gray-700 text-[10px] text-white">F12</kbd> (Developer Tools) and click the <strong>Application</strong> tab (or <strong>Storage</strong> in Firefox).</li>
+                  <li>In the left sidebar, expand <strong>Cookies</strong> &rarr; click <code>https://www.threads.net</code>.</li>
+                  <li>Find the cookie named <strong>sessionid</strong>, double-click its <strong>Value</strong> to copy, and paste it into the field above.</li>
+                </ol>
+                <p className="text-emerald-400/90 text-[11px] pt-1">
+                  ✨ <strong>Why this is best for VPS:</strong> Using <code>sessionid</code> bypasses datacenter IP checkpoints, login captchas, and 2FA locks completely.
+                </p>
+              </div>
+            </div>
+
+            {/* Optional Fallback: Username & Password */}
+            <div className="pt-2">
+              <p className="text-xs text-threads-muted mb-3 font-medium">
+                Fallback Credentials (Optional — used only if sessionID is not configured)
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">Username / Email</label>
+                  <input
+                    type="text"
+                    placeholder="username_threads"
+                    value={settingsForm.threads_username}
+                    onChange={(e) => setSettingsForm({ ...settingsForm, threads_username: e.target.value })}
+                    className="w-full px-4 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1.5">
+                    Password {settings?.threads_password_set && <span className="text-emerald-400">(Saved)</span>}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showThreadsPassword ? "text" : "password"}
+                      placeholder="Leave blank to keep existing password"
+                      value={settingsForm.threads_password}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, threads_password: e.target.value })}
+                      className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowThreadsPassword(!showThreadsPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-threads-muted hover:text-white transition-colors focus:outline-none p-1"
+                      title={showThreadsPassword ? "Hide password" : "Show password"}
+                    >
+                      {showThreadsPassword ? (
+                        <EyeOff className="w-4 h-4 text-purple-400" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Active Session State & Export Actions */}
+            {settings?.session_file_exists && (
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 bg-threads-dark/40 p-3 rounded-lg border border-threads-border/60 text-xs">
+                <span className="text-gray-400 flex items-center gap-1.5">
+                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  Synced storage state file exists on disk (<code>threads_session.json</code>)
+                </span>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`/api/settings/export-session?admin_key=${encodeURIComponent(adminKey)}`}
+                    download="threads_session.json"
+                    className="px-2.5 py-1 bg-threads-border hover:bg-threads-dark text-white rounded text-[11px] flex items-center gap-1 transition-colors border border-gray-700"
+                  >
+                    <Download className="w-3 h-3 text-purple-400" />
+                    Export JSON
+                  </a>
+                  <button
+                    type="button"
+                    disabled={sessionDeleting}
+                    onClick={handleDeleteSession}
+                    className="px-2.5 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded text-[11px] flex items-center gap-1 transition-colors border border-red-800/40"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    {sessionDeleting ? "Deleting..." : "Reset Session"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 5: Indonesian / Regional Proxy Routing */}
+          <div className="space-y-4 border-b border-threads-border pb-6">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-threads-muted flex items-center gap-2">
+              <Globe className="w-4 h-4 text-purple-400" />
+              5. Regional Proxy Routing (Indonesian IP)
+            </h3>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">
+                Proxy URL (Optional - HTTP / HTTPS / SOCKS5)
+              </label>
+              <input
+                type="text"
+                placeholder="http://username:password@proxy-ip:port or socks5://host:port"
+                value={settingsForm.proxy_url}
+                onChange={(e) => setSettingsForm({ ...settingsForm, proxy_url: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500 font-mono text-xs"
+              />
+              <p className="text-[11px] text-threads-muted mt-1.5 leading-relaxed">
+                If your VPS is located outside Indonesia (e.g. Singapore, Taiwan, US) and you wish to post from an Indonesian IP address, supply an Indonesian residential or mobile proxy URL here. The Playwright browser will route all network traffic through this proxy while enforcing Jakarta timezone, geolocation, and Indonesian headers.
+              </p>
             </div>
           </div>
 
-          {/* Section 5: Admin Portal Passcode */}
+          {/* Section 6: Admin Portal Passcode */}
           <div className="space-y-4 border-b border-threads-border pb-6">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-threads-muted">
-              5. Admin Portal Security
+              6. Admin Portal Security
             </h3>
             <div>
               <label className="block text-xs text-gray-400 mb-1.5">
@@ -1273,10 +1453,10 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Headless Toggle */}
+          {/* Section 7: Headless Toggle */}
           <div className="space-y-4 border-b border-threads-border pb-6">
             <h3 className="text-sm font-semibold uppercase tracking-wider text-threads-muted">
-              6. Browser Automation Engine
+              7. Browser Automation Engine
             </h3>
             <div className="flex items-center space-x-3">
               <input

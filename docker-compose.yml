@@ -11,7 +11,7 @@ services:
     volumes:
       - ./backend/data:/app/data
     networks:
-      - default
+      - affiliate-net
 
   frontend:
     build:
@@ -30,10 +30,11 @@ services:
     depends_on:
       - backend
     networks:
-      - default
+      - affiliate-net
       - tirenn-net
 
 networks:
-  default:
+  affiliate-net:
+    name: affiliate-net
   tirenn-net:
     external: true

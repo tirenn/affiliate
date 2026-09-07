@@ -96,6 +96,9 @@ class SystemSettingsRead(BaseModel):
     min_thread_comments: int
     min_thread_likes: int
     headless_browser: bool
+    proxy_url: Optional[str] = None
+    session_file_exists: bool = False
+    threads_session_id_set: bool = False
 
 
 class SystemSettingsUpdate(BaseModel):
@@ -103,6 +106,7 @@ class SystemSettingsUpdate(BaseModel):
     openrouter_model: Optional[str] = None
     threads_username: Optional[str] = None
     threads_password: Optional[str] = None
+    threads_session_id: Optional[str] = None
     admin_passcode: Optional[str] = None
     scheduler_enabled: Optional[bool] = None
     scheduler_window_minutes: Optional[int] = None
@@ -110,6 +114,7 @@ class SystemSettingsUpdate(BaseModel):
     min_thread_comments: Optional[int] = None
     min_thread_likes: Optional[int] = None
     headless_browser: Optional[bool] = None
+    proxy_url: Optional[str] = None
 
 
 class ToggleSchedulerRequest(BaseModel):

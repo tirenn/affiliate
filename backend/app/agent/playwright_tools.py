@@ -13,9 +13,17 @@ logger = logging.getLogger("threads_agent.playwright")
 
 
 class PlaywrightToolManager:
-    def __init__(self, headless: bool = True, imgbb_api_key: Optional[str] = None):
+    def __init__(
+        self,
+        headless: bool = True,
+        imgbb_api_key: Optional[str] = None,
+        proxy_url: Optional[str] = None,
+        session_id: Optional[str] = None
+    ):
         self.headless = headless
         self.imgbb_api_key = imgbb_api_key
+        self.proxy_url = proxy_url
+        self.session_id = session_id
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -35,33 +43,83 @@ class PlaywrightToolManager:
             "--disable-setuid-sandbox",
             "--disable-infobars",
             "--window-position=0,0",
-            "--ignore-certifcate-errors",
-            "--ignore-certifcate-errors-spki-list",
+            "--ignore-certificate-errors",
+            "--ignore-certificate-errors-spki-list",
             "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         ]
+
+        launch_kwargs = {
+            "headless": self.headless,
+            "args": launch_args
+        }
+        if self.proxy_url and self.proxy_url.strip():
+            launch_kwargs["proxy"] = {"server": self.proxy_url.strip()}
+            logger.info(f"Launching Playwright with proxy: {self.proxy_url.strip()}")
         
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=launch_args
-        )
+        self.browser = await self.playwright.chromium.launch(**launch_kwargs)
+
+        context_kwargs = {
+            "viewport": {"width": 1280, "height": 800},
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "locale": "id-ID",
+            "timezone_id": "Asia/Jakarta",
+            "geolocation": {"latitude": -6.2088, "longitude": 106.8456},
+            "permissions": ["geolocation"],
+            "extra_http_headers": {
+                "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+            }
+        }
 
         if self.session_file.exists():
             try:
                 self.context = await self.browser.new_context(
                     storage_state=str(self.session_file),
-                    viewport={"width": 1280, "height": 800},
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                    **context_kwargs
                 )
-                logger.info("Loaded existing session from storage_state.json")
+                logger.info("Loaded existing session from storage_state.json with Indonesian context")
             except Exception as e:
                 logger.warning(f"Failed to load session file: {e}")
-                self.context = await self.browser.new_context(
-                    viewport={"width": 1280, "height": 800}
-                )
+                self.context = await self.browser.new_context(**context_kwargs)
         else:
-            self.context = await self.browser.new_context(
-                viewport={"width": 1280, "height": 800}
-            )
+            self.context = await self.browser.new_context(**context_kwargs)
+
+        # Inject sessionid cookie if provided
+        if self.session_id and self.session_id.strip():
+            clean_sid = self.session_id.strip()
+            cookies = [
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".threads.net",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".threads.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".instagram.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+            ]
+            try:
+                await self.context.add_cookies(cookies)
+                logger.info("Successfully injected sessionid cookie into browser context")
+            except Exception as e:
+                logger.warning(f"Failed to inject sessionid cookie: {e}")
 
         self.page = await self.context.new_page()
         self.page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
@@ -249,20 +307,56 @@ class PlaywrightToolManager:
                 "--ignore-certificate-errors-spki-list",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             ]
-            login_browser = await playwright_instance.chromium.launch(
-                headless=self.headless,
-                args=launch_args
-            )
+            launch_kwargs = {
+                "headless": self.headless,
+                "args": launch_args
+            }
+            if self.proxy_url and self.proxy_url.strip():
+                launch_kwargs["proxy"] = {"server": self.proxy_url.strip()}
+                logger.info(f"[FASE 1] Launching login browser with proxy: {self.proxy_url.strip()}")
+
+            login_browser = await playwright_instance.chromium.launch(**launch_kwargs)
             login_context = await login_browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                locale="id-ID",
+                timezone_id="Asia/Jakarta",
+                geolocation={"latitude": -6.2088, "longitude": 106.8456},
+                permissions=["geolocation"],
+                extra_http_headers={
+                    "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+                }
             )
             login_page = await login_context.new_page()
             login_page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
             await self._setup_modal_handlers(login_page)
 
             await login_page.goto("https://www.threads.com/login", wait_until="domcontentloaded", timeout=settings.BROWSER_TIMEOUT_MS)
-            await login_page.wait_for_timeout(3000)
+            await login_page.wait_for_timeout(3500)
+            await self.dismiss_modals_if_present()
+
+            # Check if "Log in with username instead" or alternative prompt is present before inputs appear
+            for _ in range(3):
+                has_user_input = await login_page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').count() > 0
+                if has_user_input:
+                    break
+
+                alt_switch = login_page.locator(
+                    'text="Log in with username instead", '
+                    'text="Masuk dengan nama pengguna", '
+                    'text="Log in with username", '
+                    'div[role="button"]:has-text("username"), '
+                    'button:has-text("username"), '
+                    'a:has-text("username"), '
+                    'span:has-text("username"), '
+                    'span:has-text("Log in with")'
+                )
+                if await alt_switch.count() > 0:
+                    logger.info("Found 'Log in with username instead' prompt. Clicking to reveal login fields...")
+                    await alt_switch.first.click()
+                    await login_page.wait_for_timeout(2000)
+                else:
+                    await login_page.wait_for_timeout(1000)
 
             # 1. Input username
             user_input = login_page.locator('input[autocomplete="username"], input[name="username"], input[placeholder*="Username"], input[placeholder*="email"], input[type="text"]').first
@@ -393,58 +487,67 @@ class PlaywrightToolManager:
           sehingga tombol reply terlihat jelas dan bebas halangan.
         """
         try:
-            # 1. Cek apakah session file sudah ada
-            need_fase1 = not self.session_file.exists()
+            has_session_source = bool(self.session_id and self.session_id.strip()) or self.session_file.exists()
 
-            if need_fase1:
-                logger.info("[FASE 1] Session file belum ada. Menjalankan Fase 1 login via /login...")
+            # 1. Fase 1 hanya jika TIDAK ADA session_id dan TIDAK ADA session_file
+            if not has_session_source:
+                logger.info("[FASE 1] No session ID or session file found. Running Fase 1 login via /login...")
                 await self.close()
                 f1_res = await self.perform_fase1_login(username, password)
                 if not f1_res.get("success"):
                     return f1_res
 
-            # 2. FASE 2: Jalankan browser baru dengan Session ID (Tanpa masuk ke /login)
-            logger.info("[FASE 2] Membuka browser baru dengan Session ID tersimpan (tanpa /login)...")
+            # 2. FASE 2: Jalankan browser dengan Session ID / session file (Tanpa masuk ke /login)
+            logger.info("[FASE 2] Membuka browser dengan Session ID tersimpan (tanpa /login)...")
             if not self.page:
                 await self.start()
 
-            # Buka langsung ke https://www.threads.com (FEED UTAMA, BUKAN /login)
-            await self.navigate("https://www.threads.com")
+            # Buka langsung ke https://www.threads.net (FEED UTAMA, BUKAN /login)
+            await self.navigate("https://www.threads.net")
             await self.page.wait_for_timeout(3500)
             await self.dismiss_modals_if_present()
 
             # Verifikasi status sesi di Fase 2
             has_password_field = await self.page.locator('input[type="password"], input[autocomplete="current-password"]').count() > 0
+            has_login_button = await self.page.locator('a[href*="/login"], button:has-text("Log in"), button:has-text("Masuk")').count() > 0
             is_login_page = "login" in self.page.url or has_password_field
 
-            # Jika ternyata sesi yang tersimpan sudah expired (terlempar ke login)
-            if is_login_page:
-                logger.warning("[FASE 2] Sesi tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
+            # Jika ternyata sesi tidak valid / expired
+            if is_login_page or (has_login_button and not await self.page.locator('div[role="textbox"], a[href*="/@"]').count()):
+                if self.session_id and self.session_id.strip():
+                    ss = await self.take_screenshot(prefix="invalid_sessionid")
+                    return {
+                        "success": False,
+                        "error": "The configured Threads sessionID cookie is expired or invalid. Please copy a fresh sessionid from your browser (F12 > Application > Cookies) and update Admin Settings.",
+                        "screenshot": ss
+                    }
+
+                logger.warning("[FASE 2] Sesi file tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
                 await self.close()
                 self.session_file.unlink(missing_ok=True)
 
-                # Jalankan ulang Fase 1
+                # Jalankan ulang Fase 1 jika ada username/password
                 f1_res = await self.perform_fase1_login(username, password)
                 if not f1_res.get("success"):
                     return f1_res
 
                 # Jalankan ulang Fase 2
-                logger.info("[FASE 2] Membuka kembali browser dengan session ID baru (tanpa /login)...")
+                logger.info("[FASE 2] Membuka kembali browser dengan session baru...")
                 await self.start()
-                await self.navigate("https://www.threads.com")
+                await self.navigate("https://www.threads.net")
                 await self.page.wait_for_timeout(3500)
                 await self.dismiss_modals_if_present()
 
-                # Cek ulang
                 if "login" in self.page.url or await self.page.locator('input[type="password"]').count() > 0:
                     ss = await self.take_screenshot(prefix="fase2_failed")
                     return {
                         "success": False,
-                        "error": "Phase 2 failed to validate session ID after re-login.",
+                        "error": "Phase 2 failed to validate session after re-login.",
                         "screenshot": ss
                     }
 
-            # Sesi aktif terkonfirmasi di Fase 2
+            # Sesi aktif terkonfirmasi di Fase 2 -> simpan session state
+            await self.save_session()
             ss = await self.take_screenshot(prefix="fase2_active_session")
             logger.info(f"[FASE 2] Sesi aktif dan valid di {self.page.url}. Siap lanjut tanpa modal post-login.")
             return {
