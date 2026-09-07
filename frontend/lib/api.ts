@@ -70,6 +70,8 @@ export interface SystemSettings {
   headless_browser: boolean;
   proxy_url?: string | null;
   session_file_exists?: boolean;
+  threads_session_id_set?: boolean;
+  threads_session_id?: string;
 }
 
 export interface CronStatus {

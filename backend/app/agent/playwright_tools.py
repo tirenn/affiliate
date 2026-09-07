@@ -13,10 +13,17 @@ logger = logging.getLogger("threads_agent.playwright")
 
 
 class PlaywrightToolManager:
-    def __init__(self, headless: bool = True, imgbb_api_key: Optional[str] = None, proxy_url: Optional[str] = None):
+    def __init__(
+        self,
+        headless: bool = True,
+        imgbb_api_key: Optional[str] = None,
+        proxy_url: Optional[str] = None,
+        session_id: Optional[str] = None
+    ):
         self.headless = headless
         self.imgbb_api_key = imgbb_api_key
         self.proxy_url = proxy_url
+        self.session_id = session_id
         self.playwright = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
@@ -75,6 +82,44 @@ class PlaywrightToolManager:
                 self.context = await self.browser.new_context(**context_kwargs)
         else:
             self.context = await self.browser.new_context(**context_kwargs)
+
+        # Inject sessionid cookie if provided
+        if self.session_id and self.session_id.strip():
+            clean_sid = self.session_id.strip()
+            cookies = [
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".threads.net",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".threads.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".instagram.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "Lax",
+                },
+            ]
+            try:
+                await self.context.add_cookies(cookies)
+                logger.info("Successfully injected sessionid cookie into browser context")
+            except Exception as e:
+                logger.warning(f"Failed to inject sessionid cookie: {e}")
 
         self.page = await self.context.new_page()
         self.page.set_default_timeout(settings.BROWSER_TIMEOUT_MS)
@@ -442,58 +487,67 @@ class PlaywrightToolManager:
           sehingga tombol reply terlihat jelas dan bebas halangan.
         """
         try:
-            # 1. Cek apakah session file sudah ada
-            need_fase1 = not self.session_file.exists()
+            has_session_source = bool(self.session_id and self.session_id.strip()) or self.session_file.exists()
 
-            if need_fase1:
-                logger.info("[FASE 1] Session file belum ada. Menjalankan Fase 1 login via /login...")
+            # 1. Fase 1 hanya jika TIDAK ADA session_id dan TIDAK ADA session_file
+            if not has_session_source:
+                logger.info("[FASE 1] No session ID or session file found. Running Fase 1 login via /login...")
                 await self.close()
                 f1_res = await self.perform_fase1_login(username, password)
                 if not f1_res.get("success"):
                     return f1_res
 
-            # 2. FASE 2: Jalankan browser baru dengan Session ID (Tanpa masuk ke /login)
-            logger.info("[FASE 2] Membuka browser baru dengan Session ID tersimpan (tanpa /login)...")
+            # 2. FASE 2: Jalankan browser dengan Session ID / session file (Tanpa masuk ke /login)
+            logger.info("[FASE 2] Membuka browser dengan Session ID tersimpan (tanpa /login)...")
             if not self.page:
                 await self.start()
 
-            # Buka langsung ke https://www.threads.com (FEED UTAMA, BUKAN /login)
-            await self.navigate("https://www.threads.com")
+            # Buka langsung ke https://www.threads.net (FEED UTAMA, BUKAN /login)
+            await self.navigate("https://www.threads.net")
             await self.page.wait_for_timeout(3500)
             await self.dismiss_modals_if_present()
 
             # Verifikasi status sesi di Fase 2
             has_password_field = await self.page.locator('input[type="password"], input[autocomplete="current-password"]').count() > 0
+            has_login_button = await self.page.locator('a[href*="/login"], button:has-text("Log in"), button:has-text("Masuk")').count() > 0
             is_login_page = "login" in self.page.url or has_password_field
 
-            # Jika ternyata sesi yang tersimpan sudah expired (terlempar ke login)
-            if is_login_page:
-                logger.warning("[FASE 2] Sesi tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
+            # Jika ternyata sesi tidak valid / expired
+            if is_login_page or (has_login_button and not await self.page.locator('div[role="textbox"], a[href*="/@"]').count()):
+                if self.session_id and self.session_id.strip():
+                    ss = await self.take_screenshot(prefix="invalid_sessionid")
+                    return {
+                        "success": False,
+                        "error": "The configured Threads sessionID cookie is expired or invalid. Please copy a fresh sessionid from your browser (F12 > Application > Cookies) and update Admin Settings.",
+                        "screenshot": ss
+                    }
+
+                logger.warning("[FASE 2] Sesi file tersimpan ternyata sudah expired/logout. Mengulang Fase 1...")
                 await self.close()
                 self.session_file.unlink(missing_ok=True)
 
-                # Jalankan ulang Fase 1
+                # Jalankan ulang Fase 1 jika ada username/password
                 f1_res = await self.perform_fase1_login(username, password)
                 if not f1_res.get("success"):
                     return f1_res
 
                 # Jalankan ulang Fase 2
-                logger.info("[FASE 2] Membuka kembali browser dengan session ID baru (tanpa /login)...")
+                logger.info("[FASE 2] Membuka kembali browser dengan session baru...")
                 await self.start()
-                await self.navigate("https://www.threads.com")
+                await self.navigate("https://www.threads.net")
                 await self.page.wait_for_timeout(3500)
                 await self.dismiss_modals_if_present()
 
-                # Cek ulang
                 if "login" in self.page.url or await self.page.locator('input[type="password"]').count() > 0:
                     ss = await self.take_screenshot(prefix="fase2_failed")
                     return {
                         "success": False,
-                        "error": "Phase 2 failed to validate session ID after re-login.",
+                        "error": "Phase 2 failed to validate session after re-login.",
                         "screenshot": ss
                     }
 
-            # Sesi aktif terkonfirmasi di Fase 2
+            # Sesi aktif terkonfirmasi di Fase 2 -> simpan session state
+            await self.save_session()
             ss = await self.take_screenshot(prefix="fase2_active_session")
             logger.info(f"[FASE 2] Sesi aktif dan valid di {self.page.url}. Siap lanjut tanpa modal post-login.")
             return {

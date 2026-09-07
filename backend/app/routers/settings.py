@@ -38,6 +38,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     threads_user = await get_val(db, "threads_username", "")
     threads_pass = await get_val(db, "threads_password", "")
     proxy_url = await get_val(db, "proxy_url", "")
+    threads_session_id = await get_val(db, "threads_session_id", "")
     
     sched_enabled = (await get_val(db, "scheduler_enabled", "false")).lower() == "true"
     
@@ -62,6 +63,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         openrouter_model=openrouter_model,
         threads_username=threads_user,
         threads_password_set=bool(threads_pass),
+        threads_session_id_set=bool(threads_session_id),
         admin_passcode_set=True,
         scheduler_enabled=sched_enabled,
         scheduler_window_minutes=window_min,
@@ -85,6 +87,8 @@ async def update_settings(payload: SystemSettingsUpdate, db: AsyncSession = Depe
         await set_or_update(db, "threads_username", payload.threads_username)
     if payload.threads_password is not None and payload.threads_password.strip() != "":
         await set_or_update(db, "threads_password", payload.threads_password)
+    if payload.threads_session_id is not None:
+        await set_or_update(db, "threads_session_id", payload.threads_session_id.strip())
     if payload.admin_passcode is not None and payload.admin_passcode.strip() != "":
         await set_or_update(db, "admin_passcode", payload.admin_passcode.strip())
     if payload.scheduler_enabled is not None:
