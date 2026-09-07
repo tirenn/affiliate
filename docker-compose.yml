@@ -10,6 +10,8 @@ services:
       - ./backend/.env
     volumes:
       - ./backend/data:/app/data
+    networks:
+      - default
 
   frontend:
     build:
@@ -27,3 +29,11 @@ services:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     depends_on:
       - backend
+    networks:
+      - default
+      - tirenn-net
+
+networks:
+  default:
+  tirenn-net:
+    external: true
