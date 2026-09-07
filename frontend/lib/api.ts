@@ -57,9 +57,11 @@ export interface Product {
 
 export interface SystemSettings {
   openrouter_api_key_set: boolean;
+  openrouter_api_key?: string | null;
   openrouter_model: string;
   threads_username: string;
   threads_password_set: boolean;
+  threads_password?: string | null;
   admin_passcode_set?: boolean;
   scheduler_enabled: boolean;
   scheduler_window_minutes: number;
@@ -71,7 +73,7 @@ export interface SystemSettings {
   proxy_url?: string | null;
   session_file_exists?: boolean;
   threads_session_id_set?: boolean;
-  threads_session_id?: string;
+  threads_session_id?: string | null;
 }
 
 export interface CronStatus {

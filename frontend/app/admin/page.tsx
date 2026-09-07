@@ -64,6 +64,8 @@ export default function AdminPage() {
   const [showNewAdminPasscode, setShowNewAdminPasscode] = useState(false);
   const [showThreadsPassword, setShowThreadsPassword] = useState(false);
   const [showThreadsSessionId, setShowThreadsSessionId] = useState(false);
+  const [showOpenRouterKey, setShowOpenRouterKey] = useState(false);
+  const [showThreadsUsername, setShowThreadsUsername] = useState(false);
 
   // Data states
   const [products, setProducts] = useState<Product[]>([]);
@@ -148,7 +150,7 @@ export default function AdminPage() {
     setAdminKey("");
   };
 
-  const reloadData = async () => {
+  const reloadData = async (isBackground = false) => {
     if (!adminKey) return;
     try {
       const isPostedFilter = filterPosted === "unposted" ? false : filterPosted === "posted" ? true : undefined;
@@ -163,18 +165,24 @@ export default function AdminPage() {
       setCronStatus(cs);
       setLogs(l);
 
-      setSettingsForm((prev) => ({
-        ...prev,
-        openrouter_model: s.openrouter_model || "openrouter/free",
-        threads_username: s.threads_username || "",
-        scheduler_enabled: s.scheduler_enabled,
-        scheduler_window_minutes: s.scheduler_window_minutes,
-        scheduler_posts_per_window: s.scheduler_posts_per_window,
-        min_thread_comments: s.min_thread_comments,
-        min_thread_likes: s.min_thread_likes ?? 100,
-        headless_browser: s.headless_browser,
-        proxy_url: s.proxy_url || "",
-      }));
+      // Only populate settingsForm on initial load or manual refresh, NEVER in background 10s polling
+      if (!isBackground) {
+        setSettingsForm((prev) => ({
+          ...prev,
+          openrouter_api_key: s.openrouter_api_key || "",
+          openrouter_model: s.openrouter_model || "openrouter/free",
+          threads_username: s.threads_username || "",
+          threads_password: s.threads_password || "",
+          threads_session_id: s.threads_session_id || "",
+          scheduler_enabled: s.scheduler_enabled,
+          scheduler_window_minutes: s.scheduler_window_minutes,
+          scheduler_posts_per_window: s.scheduler_posts_per_window,
+          min_thread_comments: s.min_thread_comments,
+          min_thread_likes: s.min_thread_likes ?? 100,
+          headless_browser: s.headless_browser,
+          proxy_url: s.proxy_url || "",
+        }));
+      }
     } catch (e) {
       console.error(e);
     }
@@ -182,8 +190,8 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      reloadData();
-      const timer = setInterval(reloadData, 10000);
+      reloadData(false);
+      const timer = setInterval(() => reloadData(true), 10000);
       return () => clearInterval(timer);
     }
   }, [isAuthenticated, adminKey, filterPosted]);
@@ -324,13 +332,14 @@ export default function AdminPage() {
         scheduler_posts_per_window: Number(settingsForm.scheduler_posts_per_window) || 10,
         min_thread_comments: Number(settingsForm.min_thread_comments) || 100,
         min_thread_likes: Number(settingsForm.min_thread_likes) || 100,
-        proxy_url: settingsForm.proxy_url.trim(),
+        openrouter_api_key: settingsForm.openrouter_api_key.trim(),
+        openrouter_model: settingsForm.openrouter_model.trim(),
+        threads_username: settingsForm.threads_username.trim(),
+        threads_password: settingsForm.threads_password,
         threads_session_id: settingsForm.threads_session_id.trim(),
+        proxy_url: settingsForm.proxy_url.trim(),
       };
       await updateSettings(payload, adminKey);
-      if (settingsForm.threads_session_id.trim()) {
-        setSettingsForm((prev) => ({ ...prev, threads_session_id: "" }));
-      }
       if (settingsForm.admin_passcode.trim()) {
         const newKey = settingsForm.admin_passcode.trim();
         sessionStorage.setItem("admin_key", newKey);
@@ -338,7 +347,7 @@ export default function AdminPage() {
         setSettingsForm((prev) => ({ ...prev, admin_passcode: "" }));
       }
       alert("Settings successfully saved to database!");
-      await reloadData();
+      await reloadData(false);
     } catch (err) {
       alert("Failed to save settings");
     }
@@ -597,7 +606,10 @@ export default function AdminPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab("settings")}
+          onClick={() => {
+            setActiveTab("settings");
+            reloadData(false);
+          }}
           className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
             activeTab === "settings"
               ? "bg-purple-600 text-white"
@@ -1229,15 +1241,32 @@ export default function AdminPage() {
 
             <div>
               <label className="block text-xs text-gray-400 mb-1.5">
-                OpenRouter API Key {settings?.openrouter_api_key_set && <span className="text-emerald-400 font-semibold">(Saved)</span>}
+                OpenRouter API Key{" "}
+                {settings?.openrouter_api_key_set && (
+                  <span className="text-emerald-400 font-semibold">(Saved in Database)</span>
+                )}
               </label>
-              <input
-                type="password"
-                placeholder="sk-or-v1-..."
-                value={settingsForm.openrouter_api_key}
-                onChange={(e) => setSettingsForm({ ...settingsForm, openrouter_api_key: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
-              />
+              <div className="relative">
+                <input
+                  type={showOpenRouterKey ? "text" : "password"}
+                  placeholder="sk-or-v1-..."
+                  value={settingsForm.openrouter_api_key}
+                  onChange={(e) => setSettingsForm({ ...settingsForm, openrouter_api_key: e.target.value })}
+                  className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOpenRouterKey(!showOpenRouterKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-threads-muted hover:text-white transition-colors focus:outline-none p-1"
+                  title={showOpenRouterKey ? "Hide API key" : "Show API key"}
+                >
+                  {showOpenRouterKey ? (
+                    <EyeOff className="w-4 h-4 text-purple-400" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
               <p className="text-[11px] text-threads-muted mt-1">
                 Get a free API Key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-purple-400 underline">openrouter.ai/keys</a>
               </p>
@@ -1291,11 +1320,7 @@ export default function AdminPage() {
               <div className="relative">
                 <input
                   type={showThreadsSessionId ? "text" : "password"}
-                  placeholder={
-                    settings?.threads_session_id_set
-                      ? "Leave blank to keep current sessionID, or paste new sessionID to replace"
-                      : "Paste your sessionid cookie here (e.g. 768291...%3A...)"
-                  }
+                  placeholder="Paste your sessionid cookie here (e.g. 768291...%3A...)"
                   value={settingsForm.threads_session_id}
                   onChange={(e) => setSettingsForm({ ...settingsForm, threads_session_id: e.target.value })}
                   className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-purple-700/50 text-white text-sm focus:outline-none focus:border-purple-400 font-mono text-xs"
@@ -1337,23 +1362,45 @@ export default function AdminPage() {
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1.5">Username / Email</label>
-                  <input
-                    type="text"
-                    placeholder="username_threads"
-                    value={settingsForm.threads_username}
-                    onChange={(e) => setSettingsForm({ ...settingsForm, threads_username: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
-                  />
+                  <label className="block text-xs text-gray-400 mb-1.5">
+                    Username / Email{" "}
+                    {settings?.threads_username && (
+                      <span className="text-emerald-400 font-semibold">(Saved)</span>
+                    )}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showThreadsUsername ? "text" : "password"}
+                      placeholder="username_threads"
+                      value={settingsForm.threads_username}
+                      onChange={(e) => setSettingsForm({ ...settingsForm, threads_username: e.target.value })}
+                      className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowThreadsUsername(!showThreadsUsername)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-threads-muted hover:text-white transition-colors focus:outline-none p-1"
+                      title={showThreadsUsername ? "Hide username" : "Show username"}
+                    >
+                      {showThreadsUsername ? (
+                        <EyeOff className="w-4 h-4 text-purple-400" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1.5">
-                    Password {settings?.threads_password_set && <span className="text-emerald-400">(Saved)</span>}
+                    Password{" "}
+                    {settings?.threads_password_set && (
+                      <span className="text-emerald-400 font-semibold">(Saved in Database)</span>
+                    )}
                   </label>
                   <div className="relative">
                     <input
                       type={showThreadsPassword ? "text" : "password"}
-                      placeholder="Leave blank to keep existing password"
+                      placeholder="Enter Threads password"
                       value={settingsForm.threads_password}
                       onChange={(e) => setSettingsForm({ ...settingsForm, threads_password: e.target.value })}
                       className="w-full pl-4 pr-10 py-2.5 rounded-xl bg-threads-dark border border-threads-border text-white text-sm focus:outline-none focus:border-purple-500"

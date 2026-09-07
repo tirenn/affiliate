@@ -85,9 +85,11 @@ class PostLogDetailRead(PostLogRead):
 
 class SystemSettingsRead(BaseModel):
     openrouter_api_key_set: bool
+    openrouter_api_key: Optional[str] = None
     openrouter_model: str
     threads_username: str
     threads_password_set: bool
+    threads_password: Optional[str] = None
     admin_passcode_set: bool = True
     scheduler_enabled: bool
     scheduler_window_minutes: int
@@ -99,6 +101,7 @@ class SystemSettingsRead(BaseModel):
     proxy_url: Optional[str] = None
     session_file_exists: bool = False
     threads_session_id_set: bool = False
+    threads_session_id: Optional[str] = None
 
 
 class SystemSettingsUpdate(BaseModel):

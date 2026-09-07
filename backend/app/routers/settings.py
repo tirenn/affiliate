@@ -60,10 +60,13 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
 
     return SystemSettingsRead(
         openrouter_api_key_set=bool(openrouter_key),
+        openrouter_api_key=openrouter_key,
         openrouter_model=openrouter_model,
         threads_username=threads_user,
         threads_password_set=bool(threads_pass),
+        threads_password=threads_pass,
         threads_session_id_set=bool(threads_session_id),
+        threads_session_id=threads_session_id,
         admin_passcode_set=True,
         scheduler_enabled=sched_enabled,
         scheduler_window_minutes=window_min,
@@ -80,12 +83,12 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
 @router.put("", dependencies=[Depends(verify_admin)])
 async def update_settings(payload: SystemSettingsUpdate, db: AsyncSession = Depends(get_db)):
     if payload.openrouter_api_key is not None:
-        await set_or_update(db, "openrouter_api_key", payload.openrouter_api_key)
+        await set_or_update(db, "openrouter_api_key", payload.openrouter_api_key.strip())
     if payload.openrouter_model is not None:
-        await set_or_update(db, "openrouter_model", payload.openrouter_model)
+        await set_or_update(db, "openrouter_model", payload.openrouter_model.strip())
     if payload.threads_username is not None:
-        await set_or_update(db, "threads_username", payload.threads_username)
-    if payload.threads_password is not None and payload.threads_password.strip() != "":
+        await set_or_update(db, "threads_username", payload.threads_username.strip())
+    if payload.threads_password is not None and payload.threads_password != "":
         await set_or_update(db, "threads_password", payload.threads_password)
     if payload.threads_session_id is not None:
         await set_or_update(db, "threads_session_id", payload.threads_session_id.strip())
